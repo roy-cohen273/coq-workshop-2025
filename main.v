@@ -478,6 +478,10 @@ Qed.
 
 (* Specification derivability *)
 
+(* Before we define derivability, we will need some helpers for the
+   parallel composition rule (non interference) and the consequence
+   rule (rely strengthening, guard weakening) *)
+
 Definition non_interfering
     (R : list Assertion)
     (G : list (Assertion * com))
@@ -489,6 +493,27 @@ Definition non_interfering
     ) G
   ) R.
 
+Definition stronger_rely
+    (R R' : list Assertion)
+    : Prop :=
+  Forall (fun P' =>
+    forall st st',
+    P' st ->
+    (Forall (fun P => P st -> P st') R) ->
+    P' st'
+  ) R'.
+
+Definition weaker_guard
+    (G G' : list (Assertion * com))
+    : Prop :=
+  Forall (fun (g' : Assertion * com) =>
+    let (Q', x') := g' in
+    Exists (fun (g : Assertion * com) =>
+      let (Q, x) := g in
+      x = x' /\ Q' ->> Q
+    ) G
+  ) G'.
+
 Reserved Notation "'|-' c 'sat' '(' P ',' R ',' G ',' Q ')'"
                   (at level 2,
                    c custom com at level 99,
@@ -499,14 +524,8 @@ Reserved Notation "'|-' c 'sat' '(' P ',' R ',' G ',' Q ')'"
 Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Assertion * com) -> Assertion -> Prop :=
   | PH_Consequence : forall c P P' R R' G G' Q Q',
       P ->> P' ->
-      incl R' R -> (* TODO: weaker condition. page 24 in the paper *)
-      Forall (fun (g' : Assertion * com) =>
-        let (Q', x') := g' in
-        Exists (fun (g : Assertion * com) =>
-          let (Q, x) := g in
-          x = x' /\ Q' ->> Q
-        ) G
-      ) G' ->
+      stronger_rely R R' ->
+      weaker_guard G G' ->
       Q' ->> Q ->
       |- c sat (P', R', G', Q') ->
       |- c sat (P, R, G, Q)
@@ -543,62 +562,159 @@ Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Asserti
 
 (* Soundness *)
 
-Lemma phoare_consequence
-    c P P' R R' G G' Q Q'
+(* The proof for the consequence rule is split into 4 part:
+   * precondition strengthening
+   * rely strengthening
+   * guard weakening
+   * postcondition weakening *)
+
+Lemma phoare_precondition_strengthening
+    c P P' R G Q
     (H_P_P' : P ->> P')
-    (H_R'_R : incl R' R)
-    (H_guard_relaxation : Forall (fun (g' : Assertion * com) =>
-      let (Q', x') := g' in
-      Exists (fun (g : Assertion * com) =>
-        let (Q, x) := g in
-        x = x' /\ Q' ->> Q
-      ) G
-    ) G')
-    (H_Q'_Q : Q' ->> Q)
-    (H_valid : |= c sat (P', R', G', Q')) :
+    (H_valid : |= c sat (P', R, G, Q)) :
       |= c sat (P, R, G, Q).
 Proof.
   unfold phoare_valid.
   intros st c' st' C [H_precondition H_sat_rely].
-  specialize (H_valid st c' st' C).
-  assert (bcomp_assumption P' R' C) as H_assumption. {
-    clear G G' Q Q' H_guard_relaxation H_Q'_Q H_valid.
-    split.
-    - apply H_P_P'.
-      assumption.
-    - clear H_precondition.
-      induction C; simpl in *.
-      + exact I.
-      + apply IHC; assumption.
-      + destruct H_sat_rely as [H_rely_step H_sat_rely].
-        split.
-        * apply incl_Forall with R; assumption.
-        * apply IHC; assumption. 
-  }
-  apply H_valid in H_assumption as H_conclusion.
-  clear P P' R R' H_P_P' H_R'_R H_valid H_precondition H_sat_rely H_assumption.
-  induction C; simpl in *.
-  - intros H_c_skip.
-    apply H_Q'_Q.
-    auto.
-  - destruct H_conclusion as [H_guard_step H_conclusion].
-    split.
-    + destruct H_guard_step as [H_st_st' | H_guard_step]; try (left; assumption).
-      right.
-      clear dependent Q.
-      clear dependent Q'.
-      rewrite Exists_exists in *.
-      destruct H_guard_step as [[Q' x'] [H_In_G' [H_Q_st H_multistep]]].
-      rewrite Forall_forall in H_guard_relaxation.
-      apply H_guard_relaxation in H_In_G' as H_exists_guard.
-      rewrite Exists_exists in H_exists_guard.
-      destruct H_exists_guard as [[Q x] [H_In_G [H_x_x' H_Q'_Q]]].
-      subst.
-      exists (Q, x').
-      repeat split; try assumption.
-      auto.
-    + apply IHC; try reflexivity; assumption.
-  - apply IHC; try reflexivity; assumption.
+  apply H_valid.
+  split; try assumption.
+  auto.
+Qed.
+
+Lemma rely_strengthening
+    c st c' st' R R' (C : bcomp c st c' st')
+    (H_stronger_rely : stronger_rely R R')
+    (H_sat_rely : bcomp_sat_rely R C) :
+      bcomp_sat_rely R' C.
+Proof.
+  induction C; simpl in *; try auto.
+  destruct H_sat_rely as [H_rely_step H_sat_rely].
+  split; try auto.
+  unfold stronger_rely in H_stronger_rely.
+  eapply Forall_impl.
+  2: exact H_stronger_rely.
+  simpl.
+  intros P H H_P_st.
+  apply H with st; assumption.
+Qed.
+
+Lemma phoare_rely_strengthening
+    c P R R' G Q
+    (H_stronger_rely : stronger_rely R R')
+    (H_valid : |= c sat (P, R', G, Q)) :
+      |= c sat (P, R, G, Q).
+Proof.
+  unfold phoare_valid.
+  intros st c' st' C [H_precondition H_sat_rely].
+  apply H_valid.
+  split; try assumption.
+  apply rely_strengthening with R; assumption.  
+Qed.
+
+Lemma guard_weakening
+    c st c' st' G G' Q (C : bcomp c st c' st')
+    (H_weaker_guard : weaker_guard G G')
+    (H_conclusion : bcomp_conclusion Q G' C) :
+      bcomp_conclusion Q G C.
+Proof.
+  induction C; simpl in *; try auto.
+  destruct H_conclusion as [H_guard_step H_conclusion].
+  split; try auto.
+  destruct H_guard_step as [H_st_st' | H_guard_step]; try (left; assumption).
+  right.
+  clear Q c c' c'' st'' H_step C H_conclusion IHC.
+  unfold weaker_guard in H_weaker_guard.
+  rewrite Exists_exists in *.
+  destruct H_guard_step as [[Q' c'] [H_In_G' [H_Q_st H_step]]].
+  rewrite Forall_forall in H_weaker_guard.
+  apply H_weaker_guard in H_In_G' as H.
+  rewrite Exists_exists in H.
+  destruct H as [[Q c] [H_In_G [H_c_c' H_Q'_Q]]].
+  subst.
+  exists (Q, c').
+  repeat split; auto.
+Qed.
+
+Lemma phoare_guard_weakening
+    c P R G G' Q
+    (H_weaker_guard : weaker_guard G G')
+    (H_valid : |= c sat (P, R, G', Q)) :
+      |= c sat (P, R, G, Q).
+Proof.
+  unfold phoare_valid.
+  intros st c'' st' C H_assumption.
+  apply guard_weakening with G'; try assumption.
+  apply H_valid.
+  assumption.
+Qed.
+
+Lemma postcondition_weakening
+    c st c' st' G Q Q' (C : bcomp c st c' st')
+    (H_Q'_Q : Q' ->> Q)
+    (H_conclusion : bcomp_conclusion Q' G C) :
+      bcomp_conclusion Q G C.
+Proof.
+  induction C; simpl in *; try auto.
+  destruct H_conclusion as [H_guard_step H_conclusion].
+  auto.
+Qed.
+
+Lemma phoare_postcondition_weakening
+    c P R G Q Q'
+    (H_Q'_Q : Q' ->> Q)
+    (H_valid : |= c sat (P, R, G, Q')) :
+      |= c sat (P, R, G, Q).
+Proof.
+  unfold phoare_valid.
+  intros st c' st' C H_assumption.
+  apply postcondition_weakening with Q'; try assumption.
+  apply H_valid.
+  assumption.
+Qed.
+
+Lemma phoare_consequence
+    c P P' R R' G G' Q Q'
+    (H_P_P' : P ->> P')
+    (H_stronger_rely : stronger_rely R R')
+    (H_weaker_guard : weaker_guard G G')
+    (H_Q'_Q : Q' ->> Q)
+    (H_valid : |= c sat (P', R', G', Q')) :
+      |= c sat (P, R, G, Q).
+Proof.
+  eapply phoare_precondition_strengthening; try eassumption.
+  eapply phoare_rely_strengthening; try eassumption.
+  eapply phoare_guard_weakening; try eassumption.
+  eapply phoare_postcondition_weakening; try eassumption.
+Qed.
+
+(* While we're on the topic of rely strengthening / guard weakening,
+   let's prove their relationship with incl. *)
+
+Lemma incl_weaker_rely
+    R R'
+    (H_R'_R : incl R' R) :
+      stronger_rely R R'.
+Proof.
+  unfold stronger_rely.
+  rewrite Forall_forall.
+  intros P H_In_R' st st' H_P_st H_rely_step.
+  rewrite Forall_forall in H_rely_step.
+  apply H_rely_step; try assumption.
+  apply H_R'_R.
+  assumption.
+Qed.
+
+Lemma incl_stronger_guard
+    G G'
+    (H_G'_G : incl G' G) :
+      weaker_guard G G'.
+Proof.
+  unfold weaker_guard.
+  rewrite Forall_forall.
+  intros [Q' c'] H_In_G'.
+  rewrite Exists_exists.
+  exists (Q', c').
+  repeat split; auto.
 Qed.
 
 
@@ -638,19 +754,21 @@ Proof.
       econstructor.
       2: apply multi_refl.
       constructor.
-    + assert (|= skip sat (Q, [P; Q], [(P, <{ x := a }>)], Q)) as H_skip. {
-        apply phoare_consequence with (P' := Q) (R' := [Q]) (G' := []) (Q' := Q);
-        try auto.
-        - unfold incl.
-          simpl.
-          auto.
-        - apply phoare_skip.
+    + apply guard_weakening with []. {
+        apply incl_stronger_guard.
+        apply incl_nil_l.
       }
-      apply H_skip.
+      apply phoare_skip.
       split.
       * apply H_P_Q.
         assumption.
-      * assumption.
+      * apply rely_strengthening with [P; Q]. {
+          apply incl_weaker_rely.
+          unfold incl.
+          simpl.
+          auto.
+        }
+        assumption.
   - destruct H_sat_rely as [H_rely_step H_sat_rely].
     apply IHC; try reflexivity; try assumption.
     invert H_rely_step.
@@ -673,18 +791,21 @@ Proof.
     + right.
       constructor.
       split; assumption.
-    + assert (|= skip sat (Q, [P; Q], [(P, c0)], Q)) as H_skip. {
-        apply phoare_consequence with (P' := Q) (R' := [Q]) (G' := []) (Q' := Q);
-        try auto.
-        - unfold incl.
+    + apply guard_weakening with []. {
+        apply incl_stronger_guard.
+        apply incl_nil_l.
+      }
+      apply phoare_skip.
+      split.
+      * apply hoare_sound in H_derivable as H_valid.
+        apply H_valid with st; assumption.
+      * apply rely_strengthening with [P; Q]. {
+          apply incl_weaker_rely.
+          unfold incl.
           simpl.
           auto.
-        - apply phoare_skip. 
-      }
-      apply H_skip.
-      split; try assumption.
-      apply hoare_sound in H_derivable as H_valid.
-      apply H_valid with st; assumption.
+        }
+        assumption.
   - destruct H_sat_rely as [H_rely_step H_sat_rely].
     apply IHC; try reflexivity; try assumption.
     invert H_rely_step.
@@ -877,50 +998,35 @@ Proof.
   - discriminate.
   - invert H_step.
     + split; try (left; reflexivity).
-      assert (|= c' sat ({{ P /\ b }}, P :: R1 ++ R2, G1 ++ G2, Q)) as H_c'_valid. {
-        eapply phoare_consequence.
-        5: apply H_c1_valid.
-        - auto.
-        - apply incl_tl.
-          apply incl_appl.
-          apply incl_refl.
-        - rewrite Forall_forall.
-          intros [Q' x'] H_In.
-          rewrite Exists_exists.
-          exists (Q', x').
-          repeat split; try auto.
-          apply in_or_app.
-          left.
-          assumption.
-        - auto.
+      apply guard_weakening with G1. {
+        apply incl_stronger_guard.
+        apply incl_appl.
+        apply incl_refl.
       }
-      apply H_c'_valid.
-      split; try assumption.
-      simpl.
-      split; assumption.
+      apply H_c1_valid.
+      repeat split; try assumption.
+      apply rely_strengthening with (P :: R1 ++ R2). {
+        apply incl_weaker_rely.
+        apply incl_tl.
+        apply incl_appl.
+        apply incl_refl.
+      }
+      assumption.
     + split; try (left; reflexivity).
-      assert (|= c' sat ({{ P /\ ~b }}, P :: R1 ++ R2, G1 ++ G2, Q)) as H_c'_valid. {
-        eapply phoare_consequence.
-        5: apply H_c2_valid.
-        - auto.
-        - apply incl_tl.
-          apply incl_appr.
-          apply incl_refl.
-        - rewrite Forall_forall.
-          intros [Q' x'] H_In.
-          rewrite Exists_exists.
-          exists (Q', x').
-          repeat split; try auto.
-          apply in_or_app.
-          right.
-          assumption.
-        - auto.
+      apply guard_weakening with G2. {
+        apply incl_stronger_guard.
+        apply incl_appr.
+        apply incl_refl.
       }
-      apply H_c'_valid.
-      split; try assumption.
-      simpl.
-      rewrite Bool.not_true_iff_false.
-      split; assumption.
+      apply H_c2_valid.
+      repeat split; try rewrite Bool.not_true_iff_false; try assumption.
+      apply rely_strengthening with (P :: R1 ++ R2). {
+        apply incl_weaker_rely.
+        apply incl_tl.
+        apply incl_appr.
+        apply incl_refl.
+      }
+      assumption.
   - destruct H_sat_rely as [H_rely_step H_sat_rely].
     invert H_rely_step.
     apply IHC; try auto.
@@ -1448,7 +1554,8 @@ Proof.
     )
     (Q' := {{ ~(a = 0) \/ ~(b = 0) }});
     try auto.
-  - unfold incl.
+  - apply incl_weaker_rely.
+    unfold incl.
     intros P H_In.
     simpl in *.
     repeat (destruct H_In as [H_eq_P | H_In]; try auto 7).
