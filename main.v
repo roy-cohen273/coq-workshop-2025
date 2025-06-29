@@ -12,7 +12,7 @@ From PLF Require Import Hoare.
 Ltac invert H := inversion H; subst; clear H.
 
 
-(* Add atomic blocks and parallel composition to the language,
+(* Add atomic blocks, parallel composition, and havoc to the language,
    and redefine the smallstep semantics.
    In the new semantics, expression evaluation is instantanuous. *)
 
@@ -24,7 +24,8 @@ Inductive com : Type :=
   | CWhile : bexp -> com -> com
   (* New: *)
   | CAtomic : com -> com
-  | CPar : com -> com -> com.
+  | CPar : com -> com -> com
+  | CHavoc : list string -> com.
 
 
 Notation "'skip'"  :=
@@ -51,6 +52,16 @@ Notation "x || y" :=
 Notation "'atomic' x 'end'" :=
          (CAtomic x)
            (in custom com at level 89, x at level 99).
+Notation "'havoc' vars" :=
+         (CHavoc vars)
+           (in custom com at level 89).
+
+Definition differ_only_vars
+    (vars : list string) (st st' : state) : Prop :=
+  forall x, In x vars \/ st x = st' x.
+
+Notation "'<<' vars '>>' st '~' st'" := (differ_only_vars vars st st')
+    (at level 2).
 
 
 Reserved Notation " t '/' st '-->' t' '/' st' "
@@ -85,6 +96,9 @@ Inductive cstep : (com * state)  -> (com * state) -> Prop :=
       <{ c1 || c2 }> / st --> <{ c1 || c2' }> / st'
   | CS_ParDone : forall st,
       <{ skip || skip }> / st --> <{ skip }> / st
+  | CS_Havoc : forall st st' vars,
+      <<vars>> st ~ st' ->
+      <{ havoc vars }> / st --> <{ skip }> / st'
 
   where " t '/' st '-->' t' '/' st' " := (cstep (t,st) (t',st')).
 
@@ -1511,12 +1525,6 @@ Qed.
    
    We'll use the shorthand DHG to mean "doesn't have ghosts". *)
 
-Definition differ_only_ghosts (gvars : list string) (st st' : state) : Prop :=
-  forall x, In x gvars \/ st x = st' x.
-
-Notation " '<<' gvars '>>' st '~' st' " := (differ_only_ghosts gvars st st')
-                                       (at level 2).
-
 Lemma differ_refl
     gvars st :
       <<gvars>> st ~ st.
@@ -1585,7 +1593,7 @@ Inductive aexp_dhg (gvars : list string) : aexp -> Prop :=
 Lemma adhg_eval
     gvars a st st'
     (H_adhg : aexp_dhg gvars a)
-    (H_differ : differ_only_ghosts gvars st st') :
+    (H_differ : <<gvars>> st ~ st') :
       aeval st a = aeval st' a.
 Proof.
   induction H_adhg; simpl in *; try auto.
@@ -1628,7 +1636,7 @@ Inductive bexp_dhg (gvars : list string) : bexp -> Prop :=
 Lemma bdhg_eval
     gvars b st st'
     (H_dhg : bexp_dhg gvars b)
-    (H_differ : differ_only_ghosts gvars st st') :
+    (H_differ : <<gvars>> st ~ st') :
       beval st b = beval st' b.
 Proof.
   induction H_dhg; simpl in *;
@@ -1642,7 +1650,7 @@ Definition assertion_dhg
     (gvars : list string) (P : Assertion)
     : Prop :=
   forall st st',
-    differ_only_ghosts gvars st st' ->
+    <<gvars>> st ~ st' ->
     (P st <-> P st').
 
 Lemma bexp_assertion_dhg
@@ -1956,13 +1964,13 @@ Qed.
 Definition assertion_doesnt_restrict
     (gvars : list string) (P : Assertion) : Prop :=
   forall st, exists st',
-    differ_only_ghosts gvars st st' /\
+    <<gvars>> st ~ st' /\
     P st'.
 
 Definition rely_doesnt_restrict
     (gvars : list string) (R : list Assertion) : Prop :=
   forall st, exists st',
-    differ_only_ghosts gvars st st' /\
+    <<gvars>> st ~ st' /\
     Forall (fun r => (exists st'', r st'') -> r st') R.
 
 Lemma multistep_add_gvars
@@ -2831,6 +2839,80 @@ Proof.
     apply H_Q_dhg with (g !-> aeval st_hg' a ; st_hg'); try assumption.
     apply t_update_gvar.
     assumption.
+Qed.
+
+
+Lemma havoc_com_havoc_gvars
+    gvars c :
+      com_havoc_gvars gvars <{ havoc gvars ; c ; havoc gvars }>.
+Proof.
+  intros st1 st1' st2 st2' H_differ H_differ' H_steps.
+  invert H_steps.
+  rename H into H_step.
+  rename H0 into H_steps.
+  invert H_step.
+  rename st' into st3.
+  rename H3 into H_step.
+  invert H_step.
+  rename H0 into H_differ3.
+  invert H_steps.
+  rename H into H_step.
+  rename H0 into H_steps.
+  invert H_step.
+  1: invert H3.
+  apply seq_multistep in H_steps.
+  destruct H_steps. {
+    destruct H as [c' [H_discriminate_me H_steps]].
+    discriminate.
+  }
+  destruct H as [st3' [H_steps H_havoc_steps]].
+  invert H_havoc_steps.
+  rename H into H_step.
+  rename H0 into H_skip_steps.
+  invert H_step.
+  invert H_skip_steps.
+  2: invert H.
+  rename H2 into H_differ3'.
+  apply seq_multistep.
+  right.
+  exists st3.
+  split. {
+    apply multi_R.
+    constructor.
+    eapply differ_trans.
+    - apply differ_symm.
+      eassumption.
+    - eassumption.
+  }
+  apply seq_multistep.
+  right.
+  exists st3'.
+  split; try assumption.
+  apply multi_R.
+  constructor.
+  eapply differ_trans; eassumption.
+Qed.
+
+Lemma havoc_com_havoc_semantics
+    gvars c :
+      c =>> <{ havoc gvars ; c ; havoc gvars }>.
+Proof.
+  intros st st' H_steps.
+  apply seq_multistep.
+  right.
+  exists st.
+  split. {
+    apply multi_R.
+    constructor.
+    apply differ_refl.
+  }
+  apply seq_multistep.
+  right.
+  exists st'.
+  split; try assumption.
+  apply multi_R.
+  constructor.
+  apply differ_refl.
 Qed.
 
 
