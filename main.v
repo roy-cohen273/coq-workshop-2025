@@ -123,7 +123,6 @@ Inductive hoare_derivable : Assertion -> com -> Assertion -> Prop :=
     |- {{ P /\ b }} c1 {{ Q }} ->
     |- {{ P /\ ~b }} c2 {{ Q }} ->
     |- {{ P }} if b then c1 else c2 end {{ Q }}
-    (* derivable P <{if b then c1 else c2 end}> Q *)
   | H_While : forall P (b : bexp) c,
     |- {{ P /\ b }} c {{ P }} ->
     |- {{ P }} while b do c end {{ P /\ ~b }}
@@ -264,7 +263,7 @@ Fixpoint fcomp_assumption
       fcomp_assumption P R C'
   end.
 
-Fixpoint fcomp_sat_guard
+Fixpoint fcomp_sat_guar
     {c st c' st'}
     (G : list (Assertion * com))
     (C : fcomp c st c' st')
@@ -279,9 +278,9 @@ Fixpoint fcomp_sat_guard
           Q st' /\ c / st' -->* <{ skip }> / st''
         ) G
       ) /\
-      fcomp_sat_guard G C'
+      fcomp_sat_guar G C'
   | fcomp_env c st c' st' st'' C' =>
-      fcomp_sat_guard G C'
+      fcomp_sat_guar G C'
   end.
 
 Definition fcomp_conclusion
@@ -290,7 +289,7 @@ Definition fcomp_conclusion
     (G : list (Assertion * com))
     (C : fcomp c st c' st')
     : Prop :=
-  fcomp_sat_guard G C /\
+  fcomp_sat_guar G C /\
   (c' = <{ skip }> -> Q st').
 
 Definition phoare_valid_forward (c : com) (P : Assertion) (R : list Assertion) (G : list (Assertion * com)) (Q : Assertion) : Prop :=
@@ -351,7 +350,7 @@ Lemma bapp_conclusion
     (fC : fcomp c st c' st') (bC : bcomp c' st' c'' st'')
     Q G
     (H_conclusion : bcomp_conclusion Q G (bapp fC bC)) :
-      fcomp_sat_guard G fC /\
+      fcomp_sat_guar G fC /\
       bcomp_conclusion Q G bC.
 Proof.
   induction fC; simpl in *.
@@ -359,7 +358,7 @@ Proof.
   - specialize (IHfC _ H_conclusion).
     clear H_conclusion.
     simpl in IHfC.
-    destruct IHfC as [H_sat_guard [H_guard_step H_conclusion]].
+    destruct IHfC as [H_sat_guar [H_guar_step H_conclusion]].
     repeat split; assumption.
   - specialize (IHfC _ H_conclusion).
     clear H_conclusion.
@@ -383,7 +382,7 @@ Proof.
   }
   apply H_valid in H_bassumption as H_bconclusion.
   subst.
-  apply bapp_conclusion in H_bconclusion as [H_sat_guard H_bconclusion].
+  apply bapp_conclusion in H_bconclusion as [H_sat_guar H_bconclusion].
   simpl in H_bconclusion.
   split; assumption.
 Qed.
@@ -428,19 +427,19 @@ Lemma fapp_conclusion
     (fC : fcomp c st c' st') (bC : bcomp c' st' c'' st'')
     Q G
     (H_conclusion : fcomp_conclusion Q G (fapp fC bC)) :
-      fcomp_sat_guard G fC /\
+      fcomp_sat_guar G fC /\
       bcomp_conclusion Q G bC.
 Proof.
-  destruct H_conclusion as [H_sat_guard H_postcondition].
+  destruct H_conclusion as [H_sat_guar H_postcondition].
   induction bC; simpl in *.
   - split; assumption.
-  - specialize (IHbC _ H_sat_guard H_postcondition).
-    clear H_sat_guard H_postcondition.
+  - specialize (IHbC _ H_sat_guar H_postcondition).
+    clear H_sat_guar H_postcondition.
     simpl in IHbC.
-    destruct IHbC as [[H_guard_step H_sat_guard] H_conclusion].
+    destruct IHbC as [[H_guar_step H_sat_guar] H_conclusion].
     repeat split; assumption.
-  - specialize (IHbC _ H_sat_guard H_postcondition).
-    clear H_sat_guard H_postcondition.
+  - specialize (IHbC _ H_sat_guar H_postcondition).
+    clear H_sat_guar H_postcondition.
     simpl in IHbC.
     assumption.
 Qed.
@@ -460,7 +459,7 @@ Proof.
   }
   apply H_valid in H_fassumption as H_conclusion.
   subst.
-  apply fapp_conclusion in H_conclusion as [H_sat_guard H_conclusion].
+  apply fapp_conclusion in H_conclusion as [H_sat_guar H_conclusion].
   assumption.
 Qed.
 
@@ -480,7 +479,7 @@ Qed.
 
 (* Before we define derivability, we will need some helpers for the
    parallel composition rule (non interference) and the consequence
-   rule (rely strengthening, guard weakening) *)
+   rule (rely strengthening, guar weakening) *)
 
 Definition non_interfering
     (R : list Assertion)
@@ -503,7 +502,7 @@ Definition stronger_rely
     P' st'
   ) R'.
 
-Definition weaker_guard
+Definition weaker_guar
     (G G' : list (Assertion * com))
     : Prop :=
   Forall (fun (g' : Assertion * com) =>
@@ -525,7 +524,7 @@ Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Asserti
   | PH_Consequence : forall c P P' R R' G G' Q Q',
       P ->> P' ->
       stronger_rely R R' ->
-      weaker_guard G G' ->
+      weaker_guar G G' ->
       Q' ->> Q ->
       |- c sat (P', R', G', Q') ->
       |- c sat (P, R, G, Q)
@@ -565,7 +564,7 @@ Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Asserti
 (* The proof for the consequence rule is split into 4 part:
    * precondition strengthening
    * rely strengthening
-   * guard weakening
+   * guar weakening
    * postcondition weakening *)
 
 Lemma phoare_precondition_strengthening
@@ -611,23 +610,23 @@ Proof.
   apply rely_strengthening with R; assumption.  
 Qed.
 
-Lemma guard_weakening
+Lemma guar_weakening
     c st c' st' G G' Q (C : bcomp c st c' st')
-    (H_weaker_guard : weaker_guard G G')
+    (H_weaker_guar : weaker_guar G G')
     (H_conclusion : bcomp_conclusion Q G' C) :
       bcomp_conclusion Q G C.
 Proof.
   induction C; simpl in *; try auto.
-  destruct H_conclusion as [H_guard_step H_conclusion].
+  destruct H_conclusion as [H_guar_step H_conclusion].
   split; try auto.
-  destruct H_guard_step as [H_st_st' | H_guard_step]; try (left; assumption).
+  destruct H_guar_step as [H_st_st' | H_guar_step]; try (left; assumption).
   right.
   clear Q c c' c'' st'' H_step C H_conclusion IHC.
-  unfold weaker_guard in H_weaker_guard.
+  unfold weaker_guar in H_weaker_guar.
   rewrite Exists_exists in *.
-  destruct H_guard_step as [[Q' c'] [H_In_G' [H_Q_st H_step]]].
-  rewrite Forall_forall in H_weaker_guard.
-  apply H_weaker_guard in H_In_G' as H.
+  destruct H_guar_step as [[Q' c'] [H_In_G' [H_Q_st H_step]]].
+  rewrite Forall_forall in H_weaker_guar.
+  apply H_weaker_guar in H_In_G' as H.
   rewrite Exists_exists in H.
   destruct H as [[Q c] [H_In_G [H_c_c' H_Q'_Q]]].
   subst.
@@ -635,15 +634,15 @@ Proof.
   repeat split; auto.
 Qed.
 
-Lemma phoare_guard_weakening
+Lemma phoare_guar_weakening
     c P R G G' Q
-    (H_weaker_guard : weaker_guard G G')
+    (H_weaker_guar : weaker_guar G G')
     (H_valid : |= c sat (P, R, G', Q)) :
       |= c sat (P, R, G, Q).
 Proof.
   unfold phoare_valid.
   intros st c'' st' C H_assumption.
-  apply guard_weakening with G'; try assumption.
+  apply guar_weakening with G'; try assumption.
   apply H_valid.
   assumption.
 Qed.
@@ -655,7 +654,7 @@ Lemma postcondition_weakening
       bcomp_conclusion Q G C.
 Proof.
   induction C; simpl in *; try auto.
-  destruct H_conclusion as [H_guard_step H_conclusion].
+  destruct H_conclusion as [H_guar_step H_conclusion].
   auto.
 Qed.
 
@@ -676,18 +675,18 @@ Lemma phoare_consequence
     c P P' R R' G G' Q Q'
     (H_P_P' : P ->> P')
     (H_stronger_rely : stronger_rely R R')
-    (H_weaker_guard : weaker_guard G G')
+    (H_weaker_guar : weaker_guar G G')
     (H_Q'_Q : Q' ->> Q)
     (H_valid : |= c sat (P', R', G', Q')) :
       |= c sat (P, R, G, Q).
 Proof.
   eapply phoare_precondition_strengthening; try eassumption.
   eapply phoare_rely_strengthening; try eassumption.
-  eapply phoare_guard_weakening; try eassumption.
+  eapply phoare_guar_weakening; try eassumption.
   eapply phoare_postcondition_weakening; try eassumption.
 Qed.
 
-(* While we're on the topic of rely strengthening / guard weakening,
+(* While we're on the topic of rely strengthening / guar weakening,
    let's prove their relationship with incl. *)
 
 Lemma incl_weaker_rely
@@ -704,12 +703,12 @@ Proof.
   assumption.
 Qed.
 
-Lemma incl_stronger_guard
+Lemma incl_stronger_guar
     G G'
     (H_G'_G : incl G' G) :
-      weaker_guard G G'.
+      weaker_guar G G'.
 Proof.
-  unfold weaker_guard.
+  unfold weaker_guar.
   rewrite Forall_forall.
   intros [Q' c'] H_In_G'.
   rewrite Exists_exists.
@@ -754,8 +753,8 @@ Proof.
       econstructor.
       2: apply multi_refl.
       constructor.
-    + apply guard_weakening with []. {
-        apply incl_stronger_guard.
+    + apply guar_weakening with []. {
+        apply incl_stronger_guar.
         apply incl_nil_l.
       }
       apply phoare_skip.
@@ -791,8 +790,8 @@ Proof.
     + right.
       constructor.
       split; assumption.
-    + apply guard_weakening with []. {
-        apply incl_stronger_guard.
+    + apply guar_weakening with []. {
+        apply incl_stronger_guar.
         apply incl_nil_l.
       }
       apply phoare_skip.
@@ -852,7 +851,7 @@ Proof.
     + discriminate.
   - specialize (IHC eq_refl H_assumption).
     destruct IHC as [IHC | IHC].
-    + destruct IHC as [c1' [C1 [H_eq_c' [H_assumption1 [H_sat_guard H_postcondition]]]]].
+    + destruct IHC as [c1' [C1 [H_eq_c' [H_assumption1 [H_sat_guar H_postcondition]]]]].
       subst.
       clear H_postcondition.
       invert H_step.
@@ -871,11 +870,11 @@ Proof.
         }
         apply H_c1_valid in H_assumption1' as H_conclusion1'.
         rewrite HeqC1' in H_conclusion1'.
-        destruct H_conclusion1' as [H_sat_guard1' H_postcondition1'].
-        simpl in H_sat_guard1'.
-        destruct H_sat_guard1' as [H_guard_step1 H_sat_guard1].
+        destruct H_conclusion1' as [H_sat_guar1' H_postcondition1'].
+        simpl in H_sat_guar1'.
+        destruct H_sat_guar1' as [H_guar_step1 H_sat_guar1].
         repeat split.
-        -- destruct H_guard_step1; try (left; assumption).
+        -- destruct H_guar_step1; try (left; assumption).
            right.
            apply incl_Exists with G1; assumption.
         -- assumption.
@@ -888,7 +887,7 @@ Proof.
         simpl.
         split; try reflexivity.
         split; try assumption.
-        apply H_c1_valid in H_assumption1 as [H_sat_guard1 H_postcondition1].
+        apply H_c1_valid in H_assumption1 as [H_sat_guar1 H_postcondition1].
         specialize (H_postcondition1 eq_refl).
         split; try assumption.
         repeat split; try (left; reflexivity); try assumption.
@@ -897,9 +896,9 @@ Proof.
           simpl.
           assumption.
         }
-        apply H_c2_valid in H_assumption2 as [H_sat_guard2 H_postcondition2].
+        apply H_c2_valid in H_assumption2 as [H_sat_guar2 H_postcondition2].
         auto.
-    + destruct IHC as [st'0 [C1 [c2' [C2 [H_c'_c2' [H_assumption1 [H_assumption2 [H_sat_guard H_postcondition]]]]]]]].
+    + destruct IHC as [st'0 [C1 [c2' [C2 [H_c'_c2' [H_assumption1 [H_assumption2 [H_sat_guar H_postcondition]]]]]]]].
       subst.
       right.
       exists st'0.
@@ -915,18 +914,18 @@ Proof.
         assumption.
       }
       split; try assumption.
-      apply H_c2_valid in H_assumption2' as [H_sat_guard2' H_postcondition2].
-      rewrite HeqC2' in H_sat_guard2'.
-      simpl in H_sat_guard2'.
-      destruct H_sat_guard2' as [H_guard_step H_sat_guard2].
+      apply H_c2_valid in H_assumption2' as [H_sat_guar2' H_postcondition2].
+      rewrite HeqC2' in H_sat_guar2'.
+      simpl in H_sat_guar2'.
+      destruct H_sat_guar2' as [H_guar_step H_sat_guar2].
       repeat split; try assumption.
-      destruct H_guard_step as [H_st'_st'' | H_guard_step]; try (left; assumption).
+      destruct H_guar_step as [H_st'_st'' | H_guar_step]; try (left; assumption).
       right.
       apply incl_Exists with G2; assumption.
   - destruct H_assumption as [H_rely_step H_assumption].
     specialize (IHC eq_refl H_assumption).
     destruct IHC as [IHC | IHC].
-    + destruct IHC as [c1' [C1 [H_eq_c' [H_assumption1 [H_sat_guard H_postcondition]]]]].
+    + destruct IHC as [c1' [C1 [H_eq_c' [H_assumption1 [H_sat_guar H_postcondition]]]]].
       subst.
       clear H_postcondition.
       left.
@@ -938,7 +937,7 @@ Proof.
       simpl.
       split; try assumption.
       apply incl_Forall with R; assumption.
-    + destruct IHC as [st'0 [C1 [c2' [C2 [H_c'_c2' [H_assumption1 [H_assumption2 [H_sat_guard H_postcondition]]]]]]]].
+    + destruct IHC as [st'0 [C1 [c2' [C2 [H_c'_c2' [H_assumption1 [H_assumption2 [H_sat_guar H_postcondition]]]]]]]].
       subst.
       right.
       exists st'0.
@@ -955,7 +954,7 @@ Proof.
         apply incl_Forall with R; assumption.
       }
       repeat split; try assumption.
-      apply H_c2_valid in H_assumption2' as [H_sat_guard2' H_postcondition2].
+      apply H_c2_valid in H_assumption2' as [H_sat_guar2' H_postcondition2].
       assumption.
 Qed.
 
@@ -998,8 +997,8 @@ Proof.
   - discriminate.
   - invert H_step.
     + split; try (left; reflexivity).
-      apply guard_weakening with G1. {
-        apply incl_stronger_guard.
+      apply guar_weakening with G1. {
+        apply incl_stronger_guar.
         apply incl_appl.
         apply incl_refl.
       }
@@ -1013,8 +1012,8 @@ Proof.
       }
       assumption.
     + split; try (left; reflexivity).
-      apply guard_weakening with G2. {
-        apply incl_stronger_guard.
+      apply guar_weakening with G2. {
+        apply incl_stronger_guar.
         apply incl_appr.
         apply incl_refl.
       }
@@ -1071,10 +1070,10 @@ Proof.
     + assumption.
     + discriminate.
   - specialize (IHC eq_refl H_assumption).
-    destruct IHC as [[H_eq_c' [H_P_st' [H_sat_guard H_postcondition]]] |
-                    [[H_eq_c' [H_P_st' [H_sat_guard H_postcondition]]] |
-                    [[H_eq_c' [H_sat_guard H_postcondition]] |
-                     [st0 [c1 [C' [H_eq_c' [H_P_st0 [H_assumption' [H_sat_guard H_postcondition]]]]]]]]]].
+    destruct IHC as [[H_eq_c' [H_P_st' [H_sat_guar H_postcondition]]] |
+                    [[H_eq_c' [H_P_st' [H_sat_guar H_postcondition]]] |
+                    [[H_eq_c' [H_sat_guar H_postcondition]] |
+                     [st0 [c1 [C' [H_eq_c' [H_P_st0 [H_assumption' [H_sat_guar H_postcondition]]]]]]]]]].
     + subst.
       invert H_step.
       clear H_postcondition.
@@ -1135,15 +1134,15 @@ Proof.
         apply H_valid in H_assumption'' as H_conclusion''.
         subst.
         unfold fcomp_conclusion in H_conclusion''.
-        destruct H_conclusion'' as [H_sat_guard' H_postcondition'].
-        simpl in H_sat_guard'.
-        destruct H_sat_guard' as [H_guard_step H_sat_guard'].
+        destruct H_conclusion'' as [H_sat_guar' H_postcondition'].
+        simpl in H_sat_guar'.
+        destruct H_sat_guar' as [H_guar_step H_sat_guar'].
         repeat split; try assumption.
         discriminate.
       * left.
         split; try reflexivity.
         repeat split; try assumption.
-        -- apply H_valid in H_assumption' as [H_sat_guard' H_postcondition'].
+        -- apply H_valid in H_assumption' as [H_sat_guar' H_postcondition'].
            apply H_postcondition'.
            reflexivity.
         -- left.
@@ -1160,10 +1159,10 @@ Proof.
       apply H_rely_step.
       assumption.
     }
-    destruct IHC as [[H_eq_c' [H_P_st' [H_sat_guard H_postcondition]]] |
-                    [[H_eq_c' [H_P_st' [H_sat_guard H_postcondition]]] |
-                    [[H_eq_c' [H_sat_guard H_postcondition]] |
-                     [st0 [c1 [C' [H_eq_c' [H_P_st0 [H_assumption' [H_sat_guard H_postcondition]]]]]]]]]].
+    destruct IHC as [[H_eq_c' [H_P_st' [H_sat_guar H_postcondition]]] |
+                    [[H_eq_c' [H_P_st' [H_sat_guar H_postcondition]]] |
+                    [[H_eq_c' [H_sat_guar H_postcondition]] |
+                     [st0 [c1 [C' [H_eq_c' [H_P_st0 [H_assumption' [H_sat_guar H_postcondition]]]]]]]]]].
     + left.
       subst.
       repeat split; auto.
@@ -1265,7 +1264,7 @@ Proof.
       auto.
     + discriminate.
   - specialize (IHC eq_refl H_assumption).
-    destruct IHC as [c1' [C1 [c2' [C2 [H_eq_c' [H_assumption1 [H_assumption2 [H_sat_guard H_postcondition]]]]]]]].
+    destruct IHC as [c1' [C1 [c2' [C2 [H_eq_c' [H_assumption1 [H_assumption2 [H_sat_guar H_postcondition]]]]]]]].
     destruct H_eq_c' as [H_eq_c' | [H_eq_c' [H_eq_c1' H_eq_c2']]]; subst.
     + clear H_postcondition.
       invert H_step.
@@ -1285,18 +1284,18 @@ Proof.
         split; try assumption.
         apply H_c1_valid in H_assumption1' as H_conclusion1'.
         rewrite HeqC1' in H_conclusion1'.
-        destruct H_conclusion1' as [H_sat_guard1' H_postcondition1].
-        simpl in H_sat_guard1'.
-        destruct H_sat_guard1' as [H_guard_step H_sat_guard1].
+        destruct H_conclusion1' as [H_sat_guar1' H_postcondition1].
+        simpl in H_sat_guar1'.
+        destruct H_sat_guar1' as [H_guar_step H_sat_guar1].
         assert (Forall (fun P0 : state -> Prop => P0 st' -> P0 st'') R2) as H_rely_step. {
-          destruct H_guard_step as [H_st'_st'' | H_guard_step].
+          destruct H_guar_step as [H_st'_st'' | H_guar_step].
           - subst.
             rewrite Forall_forall.
             auto.
           - set (H := H_non_interfering2).
             unfold non_interfering in H.
-            rewrite Exists_exists in H_guard_step.
-            destruct H_guard_step as [[A x] [H_In_G1 [H_A_st' H_step]]].
+            rewrite Exists_exists in H_guar_step.
+            destruct H_guar_step as [[A x] [H_In_G1 [H_A_st' H_step]]].
             rewrite Forall_forall.
             intros p H_In_R2 H_p_st'.
             rewrite Forall_forall in H.
@@ -1312,7 +1311,7 @@ Proof.
         -- rewrite HeqC2'.
            simpl.
            split; assumption.
-        -- destruct H_guard_step as [H_st'_st'' | H_guard_step]; try (left; assumption).
+        -- destruct H_guar_step as [H_st'_st'' | H_guar_step]; try (left; assumption).
            right.
            apply incl_Exists with G1; assumption.
         -- assumption.
@@ -1333,18 +1332,18 @@ Proof.
         }
         apply H_c2_valid in H_assumption2' as H_conclusion2'.
         rewrite HeqC2' in H_conclusion2'.
-        destruct H_conclusion2' as [H_sat_guard2' H_postcondition2].
-        simpl in H_sat_guard2'.
-        destruct H_sat_guard2' as [H_guard_step H_sat_guard2].
+        destruct H_conclusion2' as [H_sat_guar2' H_postcondition2].
+        simpl in H_sat_guar2'.
+        destruct H_sat_guar2' as [H_guar_step H_sat_guar2].
         assert (Forall (fun P0 : state -> Prop => P0 st' -> P0 st'') R1) as H_rely_step. {
-          destruct H_guard_step as [H_st'_st'' | H_guard_step].
+          destruct H_guar_step as [H_st'_st'' | H_guar_step].
           - subst.
             rewrite Forall_forall.
             auto.
           - set (H := H_non_interfering1).
             unfold non_interfering in H.
-            rewrite Exists_exists in H_guard_step.
-            destruct H_guard_step as [[A x] [H_In_G2 [H_Q_st' H_step]]].
+            rewrite Exists_exists in H_guar_step.
+            destruct H_guar_step as [[A x] [H_In_G2 [H_Q_st' H_step]]].
             rewrite Forall_forall.
             intros p H_In_R1 H_p_st'.
             rewrite Forall_forall in H.
@@ -1363,7 +1362,7 @@ Proof.
         -- rewrite HeqC2'.
            simpl.
            assumption.
-        -- destruct H_guard_step as [H_st'_st'' | H_guard_step]; try (left; assumption).
+        -- destruct H_guar_step as [H_st'_st'' | H_guar_step]; try (left; assumption).
            right.
            apply incl_Exists with G2; assumption.
         -- assumption.
@@ -1380,14 +1379,14 @@ Proof.
         -- intros _.
            apply H_Q1_Q2_Q.
            split.
-           ++ apply H_c1_valid in H_assumption1 as [H_sat_guard1 H_postcondition1].
+           ++ apply H_c1_valid in H_assumption1 as [H_sat_guar1 H_postcondition1].
               auto.
-           ++ apply H_c2_valid in H_assumption2 as [H_sat_guard2 H_postdoncition2].
+           ++ apply H_c2_valid in H_assumption2 as [H_sat_guar2 H_postdoncition2].
               auto.
     + invert H_step.
   - destruct H_assumption as [H_rely_step H_assumption].
     specialize (IHC eq_refl H_assumption).
-    destruct IHC as [c1' [C1 [c2' [C2 [H_eq_c' [H_assumption1 [H_assumption2 [H_sat_guard H_postcindition]]]]]]]].
+    destruct IHC as [c1' [C1 [c2' [C2 [H_eq_c' [H_assumption1 [H_assumption2 [H_sat_guar H_postcindition]]]]]]]].
     exists c1'.
     remember (fcomp_env c1 st c1' st' st'' C1) as C1'.
     exists C1'.
