@@ -503,6 +503,17 @@ Definition stronger_rely
     P' st'
   ) R'.
 
+Definition bigstep_semantics_incl
+    (c c' : com) : Prop :=
+  forall st st',
+    c / st -->* <{ skip }> / st' ->
+    c' / st -->* <{ skip }> / st'.
+
+Notation " c '=>>' c' " := (bigstep_semantics_incl c c')
+    (at level 80).
+
+Hint Unfold bigstep_semantics_incl : core.
+
 Definition weaker_guar
     (G G' : list (Assertion * com))
     : Prop :=
@@ -510,7 +521,7 @@ Definition weaker_guar
     let (Q', x') := g' in
     Exists (fun (g : Assertion * com) =>
       let (Q, x) := g in
-      x = x' /\ Q' ->> Q
+      x' =>> x /\ Q' ->> Q
     ) G
   ) G'.
 
@@ -629,9 +640,8 @@ Proof.
   rewrite Forall_forall in H_weaker_guar.
   apply H_weaker_guar in H_In_G' as H.
   rewrite Exists_exists in H.
-  destruct H as [[Q c] [H_In_G [H_c_c' H_Q'_Q]]].
-  subst.
-  exists (Q, c').
+  destruct H as [[Q c] [H_In_G [H_c'_c H_Q'_Q]]].
+  exists (Q, c).
   repeat split; auto.
 Qed.
 
