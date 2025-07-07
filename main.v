@@ -1674,11 +1674,11 @@ Reserved Notation " '<(' gvars ')>' c '~>' c' "
 Inductive remove_ghost_variables : list string -> com -> com -> Prop :=
   | GSkip : forall gvars,
       <(gvars)> skip ~> skip
-  | GAssnNonGhost : forall x a gvars,
+  | GAsgnNonGhost : forall x a gvars,
       ~ In x gvars ->
       aexp_dhg gvars a ->
       <(gvars)> x := a ~> x := a
-  | GAssnGhost : forall g a gvars (H_In_gvars : In g gvars),
+  | GAsgnGhost : forall g a gvars (H_In_gvars : In g gvars),
       <(gvars)> g := a ~> skip
   | GSeq : forall c1 c1' c2 c2' gvars,
       <(gvars)> c1 ~> c1' ->
@@ -1739,12 +1739,12 @@ Proof.
       invert H.
       * specialize (IHH_step cr1 c1' eq_refl).
         destruct IHH_step.
-        -- destruct H as [cl3 [H_eq_c3 H_step'] ].
+        -- destruct H as [cl3 [H_eq_c3 H_step']].
            left.
            exists cl3.
            split; try assumption.
            apply multi_step with (c1', st2); assumption.
-        -- destruct H as [st2' [H_step' H_step''] ].
+        -- destruct H as [st2' [H_step' H_step'']].
            right.
            exists st2'.
            split; try assumption.
@@ -1752,7 +1752,7 @@ Proof.
       * right.
         exists st2.
         split; [constructor | assumption].
-  - intros [ [cl3 [H_eq_c3 H_step] ] | [st2 [H_step1 H_step2] ] ].
+  - intros [[cl3 [H_eq_c3 H_step]] | [st2 [H_step1 H_step2]]].
     + subst.
       remember (cl1, st1) as p1.
       remember (cl3, st3) as p2.
@@ -2052,10 +2052,10 @@ Proof.
     specialize (IHH_remove_gvars2 H2).
     clear H1 H2.
     apply seq_multistep in H_steps_dhg.
-    destruct H_steps_dhg as [ [c1_dhg' [H_eq_c_dhg' H_steps_1dhg] ] | [st_dhg_m [H_steps_1dhg H_steps_2dhg] ] ].
+    destruct H_steps_dhg as [[c1_dhg' [H_eq_c_dhg' H_steps_1dhg]] | [st_dhg_m [H_steps_1dhg H_steps_2dhg]]].
     + clear IHH_remove_gvars2.
       specialize (IHH_remove_gvars1 st_hg st_dhg H_differ st_dhg' c1_dhg' H_steps_1dhg).
-      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [H_differ' [H_steps_1hg H_eq_gvars] ] ] ] ].
+      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [H_differ' [H_steps_1hg H_eq_gvars]]]]].
       subst.
       exists <{ c1_hg' ; c2_hg }>, st_hg'.
       repeat split; try (constructor; assumption); try assumption.
@@ -2064,10 +2064,10 @@ Proof.
       exists c1_hg'.
       split; auto.
     + specialize (IHH_remove_gvars1 st_hg st_dhg H_differ st_dhg_m <{ skip }> H_steps_1dhg).
-      destruct IHH_remove_gvars1 as [skip' [st_hg_m [H_remove_gvars_skip [H_differ_m [H_steps_1hg H_eq_gvars1] ] ] ] ].
+      destruct IHH_remove_gvars1 as [skip' [st_hg_m [H_remove_gvars_skip [H_differ_m [H_steps_1hg H_eq_gvars1]]]]].
       invert H_remove_gvars_skip.
       * specialize (IHH_remove_gvars2 st_hg_m st_dhg_m H_differ_m st_dhg' c_dhg' H_steps_2dhg).
-        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2] ] ] ] ].
+        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
         exists c_hg', st_hg'.
         repeat split; try assumption.
         -- apply seq_multistep.
@@ -2101,7 +2101,7 @@ Proof.
             assumption.
         }
         specialize (IHH_remove_gvars2 st_hg_m' st_dhg_m H_differ_m' st_dhg' c_dhg' H_steps_2dhg).
-        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2] ] ] ] ].
+        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
         exists c_hg', st_hg'.
         repeat split; try assumption.
         -- apply seq_multistep.
@@ -2140,7 +2140,7 @@ Proof.
       invert H_step_dhg.
       * clear IHH_remove_gvars2.
         specialize (IHH_remove_gvars1 st_hg st_dhg' H_differ st_dhg'' c_dhg'' H_steps_dhg).
-        destruct IHH_remove_gvars1 as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps_hg H_eq_gvars'] ] ] ] ].
+        destruct IHH_remove_gvars1 as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps_hg H_eq_gvars']]]]].
         exists c_hg'', st_hg''.
         repeat split; try assumption.
         econstructor.
@@ -2150,7 +2150,7 @@ Proof.
         -- assumption.
       * clear IHH_remove_gvars1.
         specialize (IHH_remove_gvars2 st_hg st_dhg' H_differ st_dhg'' c_dhg'' H_steps_dhg).
-        destruct IHH_remove_gvars2 as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps_hg H_eq_gvars'] ] ] ] ].
+        destruct IHH_remove_gvars2 as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps_hg H_eq_gvars']]]]].
         exists c_hg'', st_hg''.
         repeat split; try assumption.
         econstructor.
@@ -2190,7 +2190,7 @@ Proof.
         intros g H_In_gvars.
         reflexivity.
     + specialize (IHH_remove_gvars st_hg st H_differ st' c' H1).
-      destruct IHH_remove_gvars as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps H_eq_gvars] ] ] ] ].
+      destruct IHH_remove_gvars as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps H_eq_gvars]]]]].
       exists <{ c_hg' ; while b do c end }>, st_hg'.
       repeat split; try assumption.
       * constructor; try assumption.
@@ -2209,10 +2209,10 @@ Proof.
         assumption.
     + specialize (IHH_steps_dhg H_remove_gvars IHH_remove_gvars).
       specialize (IHH_remove_gvars st_hg st H_differ st' <{ skip }> H1).
-      destruct IHH_remove_gvars as [skip' [st_hg' [H_remove_gvars_skip [H_differ' [H_steps H_eq_gvars] ] ] ] ].
+      destruct IHH_remove_gvars as [skip' [st_hg' [H_remove_gvars_skip [H_differ' [H_steps H_eq_gvars]]]]].
       invert H_remove_gvars_skip.
       * specialize (IHH_steps_dhg st_hg' H_differ').
-        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars'] ] ] ] ].
+        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars']]]]].
         exists c_hg'', st_hg''.
         repeat split; try assumption.
         -- econstructor.
@@ -2242,7 +2242,7 @@ Proof.
           assumption.
         }
         specialize (IHH_steps_dhg st_hg'_ H_differ'_).
-        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars'] ] ] ] ].
+        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars']]]]].
         exists c_hg'', st_hg''.
         repeat split; try assumption.
         -- econstructor.
@@ -2284,7 +2284,7 @@ Proof.
       invert H_steps_dhg.
       2: invert H.
       specialize (IHH_remove_gvars st_hg st_dhg H_differ st_dhg'' <{ skip }> H0).
-      destruct IHH_remove_gvars as [skip' [st_hg'' [H_remove_gvars_skip [H_differ'' [H_steps H_eq_gvars] ] ] ] ].
+      destruct IHH_remove_gvars as [skip' [st_hg'' [H_remove_gvars_skip [H_differ'' [H_steps H_eq_gvars]]]]].
       invert H_remove_gvars_skip.
       * exists <{ skip }>, st_hg''.
         repeat split; try (constructor; assumption); try assumption.
@@ -2370,7 +2370,7 @@ Proof.
     + rename c1' into c1_dhg'.
       rename H0 into H_step_1dhg.
       specialize (IHH_remove_gvars1 H_differ c1_dhg' H_step_1dhg).
-      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [ H_differ' [ [H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg'] ] ] ] ] ].
+      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [ H_differ' [[H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg']]]]]].
       * exists <{ c1_hg' ; c2_hg }>, st_hg'.
         repeat split; try (constructor; assumption); try assumption.
         left.
@@ -2452,7 +2452,7 @@ Proof.
         <(gvars)> c_hg' ~> <{ skip }> /\
         <<gvars>> st_hg' ~ st_dhg' /\
         c_hg / st_hg -->* c_hg' / st_hg' /\ 
-        Forall (fun g => st_dhg g = st_dhg' g) gvars) as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_hg H_eq_gvars] ] ] ] ]. {
+        Forall (fun g => st_dhg g = st_dhg' g) gvars) as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_hg H_eq_gvars]]]]]. {
       apply multistep_add_gvars with c_dhg; assumption.
     }
     invert H_remove_gvars'.
@@ -2507,7 +2507,7 @@ Proof.
     + rename c1' into c1_dhg'.
       rename H0 into H_step_1dhg.
       specialize (IHH_remove_gvars1 H_differ c1_dhg' H_step_1dhg).
-      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [H_differ' [ [H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg'] ] ] ] ] ].
+      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [H_differ' [[H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg']]]]]].
       * exists <{ c1_hg' || c2_hg }>, st_hg'.
         repeat split; try (constructor; assumption); try assumption.
         left.
@@ -2540,7 +2540,7 @@ Proof.
     + rename c2' into c2_dhg'.
       rename H0 into H_step_2dhg.
       specialize (IHH_remove_gvars2 H_differ c2_dhg' H_step_2dhg).
-      destruct IHH_remove_gvars2 as [c2_hg' [st_hg' [H_remove_gvars2' [H_differ' [ [H_step_2hg H_eq_down] | [H_step_2hg H_st_dhg_st_dhg'] ] ] ] ] ].
+      destruct IHH_remove_gvars2 as [c2_hg' [st_hg' [H_remove_gvars2' [H_differ' [[H_step_2hg H_eq_down] | [H_step_2hg H_st_dhg_st_dhg']]]]]].
       * exists <{ c1_hg || c2_hg' }>, st_hg'.
         repeat split; try (constructor; assumption); try assumption.
         left.
@@ -2709,14 +2709,14 @@ Proof.
     rename c'' into c_dhg''.
     rename st'' into st_dhg''.
     specialize (IHC_dhg H_npia H_differ H_assumption_dhg c_hg H_remove_gvars H_valid_hg).
-    destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg ] ] ] ] ] ].
+    destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg]]]]]].
     assert (exists c_hg'' st_hg'',
         <(gvars)> c_hg'' ~> c_dhg'' /\
         <<gvars>> st_hg'' ~ st_dhg'' /\
         (
           (c_hg' / st_hg' --> c_hg'' / st_hg'' /\ (st_hg' = st_hg'' -> st_dhg' = st_dhg'')) \/
           (c_hg' / st_hg' -->* c_hg'' / st_hg'' /\ st_dhg' = st_dhg'')
-        )) as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [ [H_step_hg H_eq_down] | [H_step_hg H_st_dhg'_st_dhg''] ] ] ] ] ]. {
+        )) as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [[H_step_hg H_eq_down] | [H_step_hg H_st_dhg'_st_dhg'']]]]]]. {
       apply step_add_gvars with c_dhg'; try assumption.
       eapply fcomp_npia.
       - apply C_dhg.
@@ -2736,7 +2736,7 @@ Proof.
       destruct H_guar_step_hg' as [H_st_hg'_st_hg'' | H_guar_step_hg']; try (left; apply H_eq_down; assumption).
       right.
       rewrite Exists_exists in *.
-      destruct H_guar_step_hg' as [ [A c] [H_In_G [H_A_st_hg' H_steps] ] ].
+      destruct H_guar_step_hg' as [[A c] [H_In_G [H_A_st_hg' H_steps]]].
       exists (A, c).
       unfold guar_havoc_gvars in H_G_havoc.
       rewrite Forall_forall in H_G_havoc.
@@ -2764,8 +2764,8 @@ Proof.
     rename st'' into st_dhg''.
     destruct H_assumption_dhg as [H_rely_step_dhg H_assumption_dhg].
     specialize (IHC_dhg H_npia H_differ H_assumption_dhg c_hg H_remove_gvars H_valid_hg).
-    destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg] ] ] ] ] ].
-    destruct (H_R_hg st_hg' st_dhg'') as [st_hg'' [H_differ'' H_R_st_hg'_st_hg''] ].
+    destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg]]]]]].
+    destruct (H_R_hg st_hg' st_dhg'') as [st_hg'' [H_differ'' H_R_st_hg'_st_hg'']].
     set (C_hg' := fcomp_env c_hg st_hg c_hg' st_hg' st_hg'' C_hg).
     exists c_hg', st_hg'', C_hg'.
     repeat split; try assumption.
@@ -2807,12 +2807,12 @@ Theorem ghost_variable_rule
 Proof.
   rewrite bvalid_iff_fvalid in *.
   intros st_dhg c_dhg' st_dhg' C_dhg H_assumption_dhg.
-  destruct (H_P_restrict st_dhg) as [st_hg [H_differ H_precondition_hg] ].
+  destruct (H_P_restrict st_dhg) as [st_hg [H_differ H_precondition_hg]].
   assert (exists c_hg' st_hg' (C_hg : fcomp c_hg st_hg c_hg' st_hg'),
         <(gvars)> c_hg' ~> c_dhg' /\
         <<gvars>> st_hg' ~ st_dhg' /\
         fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg /\
-        fcomp_sat_guar G C_dhg) as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg] ] ] ] ] ]. {
+        fcomp_sat_guar G C_dhg) as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg]]]]]]. {
     apply fcomp_add_gvars with Q; try assumption.
     apply differ_symm.
     assumption.
@@ -3142,13 +3142,13 @@ Proof.
     rewrite H.
     reflexivity.
   - constructor; constructor; constructor.
-    + apply GAssnGhost.
+    + apply GAsgnGhost.
       left.
       reflexivity.
     + constructor; try assumption.
       constructor; constructor.
       assumption.
-    + apply GAssnGhost.
+    + apply GAsgnGhost.
       left.
       reflexivity.
     + constructor; try assumption.
