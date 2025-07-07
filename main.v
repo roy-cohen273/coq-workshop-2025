@@ -3,6 +3,7 @@ From Coq Require Import Strings.String.
 From Coq Require Import Lists.List.
 From Coq Require Import List. Import ListNotations.
 From Coq Require Import Logic.FunctionalExtensionality.
+From Coq Require Import Lia.
 From PLF Require Import Maps.
 From PLF Require Import Imp.
 From PLF Require Import Smallstep.
@@ -1969,9 +1970,9 @@ Definition assertion_doesnt_restrict
 
 Definition rely_doesnt_restrict
     (gvars : list string) (R : list Assertion) : Prop :=
-  forall st, exists st',
-    <<gvars>> st ~ st' /\
-    Forall (fun r => (exists st'', r st'') -> r st') R.
+  forall st st', exists st'',
+    <<gvars>> st' ~ st'' /\
+    Forall (fun r => r st -> r st'') R.
 
 Lemma multistep_add_gvars
     gvars c_dhg st_dhg c_dhg' st_dhg' c_hg st_hg
@@ -2764,7 +2765,7 @@ Proof.
     destruct H_assumption_dhg as [H_rely_step_dhg H_assumption_dhg].
     specialize (IHC_dhg H_npia H_differ H_assumption_dhg c_hg H_remove_gvars H_valid_hg).
     destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg] ] ] ] ] ].
-    destruct (H_R_hg st_dhg'') as [st_hg'' [H_differ'' H_R_hg_st_hg''] ].
+    destruct (H_R_hg st_hg' st_dhg'') as [st_hg'' [H_differ'' H_R_st_hg'_st_hg''] ].
     set (C_hg' := fcomp_env c_hg st_hg c_hg' st_hg' st_hg'' C_hg).
     exists c_hg', st_hg'', C_hg'.
     repeat split; try assumption.
@@ -2785,10 +2786,9 @@ Proof.
         apply H_R_dhg with st_hg'; try assumption.
         apply differ_symm.
         assumption.
-      * rewrite Forall_forall in H_R_hg_st_hg''.
-        specialize (H_R_hg_st_hg'' r H_In_R_hg).
-        apply H_R_hg_st_hg''.
-        exists st_hg'.
+      * rewrite Forall_forall in H_R_st_hg'_st_hg''.
+        specialize (H_R_st_hg'_st_hg'' r H_In_R_hg).
+        apply H_R_st_hg'_st_hg''.
         assumption.
 Qed.
 
@@ -3045,3 +3045,228 @@ Proof.
     + admit.
     + admit.
 Admitted.
+
+Lemma assert_implies_refl
+    P :
+      P ->> P.
+Proof.
+  auto.
+Qed.
+
+Lemma H_Consequence_pre
+    P P' Q c
+    (H_valid : |- {{ P' }} c {{ Q }})
+    (H_implies : P ->> P') :
+      |- {{ P }} c {{ Q }}.
+Proof.
+  eapply H_Consequence.
+  - eassumption.
+  - assumption.
+  - auto.
+Qed.
+
+(* Example is taken from the paper "Owicki-Gries Reasoning for Weak Memory Models" by Ori Lahav and Viktor Vafeiadis, Fig. 11 (page 11). *)
+Example example2 :
+  exists R G,
+  |= atomic skip ; X := X + 1 end || atomic skip ; X := X + 1 end sat ({{ X = 0 }}, R, G, {{ X = 2 }}).
+Proof.
+  assert (H_X_not_gvar : ~ In X [Y]). {
+    intros []; try assumption.
+    discriminate.
+  }
+  assert (H_Y_neq_X : Y <> X). {
+    intros C.
+    discriminate.
+  }
+  assert (H_X_neq_Y : X <> Y). {
+    intros C.
+    discriminate.
+  }
+
+  eexists.
+  eexists.
+  eapply ghost_variable_rule with
+    (gvars := [Y])
+    (P_hg := {{ Y = 0 }})
+    (R_dhg := [{{ X = 0 }}; {{ X = 1 }}; {{ X = 2 }}])
+    (R_hg := [{{ Y = 0 }}; {{ Y = 1 }}; {{ Y = 2 }}; {{ Y = 3 }}])
+    (G := [
+      ({{ True }}, <{ havoc [Y] ; (Y := Y + 1 ; X := X + 1) ; havoc [Y] }>);
+      ({{ True }}, <{ havoc [Y] ; (Y := Y + 2 ; X := X + 1) ; havoc [Y] }>)
+    ]).
+  - repeat constructor.
+  - unfold assertion_dhg.
+    intros st st' H_differ.
+    specialize (H_differ X).
+    destruct H_differ; try solve [exfalso; auto].
+    simpl.
+    rewrite H.
+    reflexivity.
+  - unfold assertion_doesnt_restrict.
+    intros st.
+    exists (Y !-> 0 ; st).
+    simpl.
+    rewrite t_update_eq.
+    split; try reflexivity.
+    apply t_update_gvar.
+    left.
+    reflexivity.
+  - simpl.
+    repeat (constructor; try solve [
+      intros st st' H_differ;
+      specialize (H_differ X);
+      destruct H_differ; try solve [exfalso; auto];
+      rewrite H;
+      reflexivity
+    ]).
+  - unfold rely_doesnt_restrict.
+    intros st st'.
+    exists (Y !-> st Y ; st').
+    split; try (apply t_update_gvar; left; reflexivity).
+    simpl.
+    repeat (constructor; try solve [
+      rewrite t_update_eq;
+      auto
+    ]).
+  - unfold guar_havoc_gvars.
+    repeat (constructor; try solve [
+      unfold assertion_dhg;
+      split; try (intros; reflexivity);
+      apply havoc_com_havoc_gvars
+    ]).
+  - unfold assertion_dhg.
+    intros st st' H_differ.
+    specialize (H_differ X).
+    destruct H_differ; try solve [exfalso; auto].
+    simpl.
+    rewrite H.
+    reflexivity.
+  - constructor; constructor; constructor.
+    + apply GAssnGhost.
+      left.
+      reflexivity.
+    + constructor; try assumption.
+      constructor; constructor.
+      assumption.
+    + apply GAssnGhost.
+      left.
+      reflexivity.
+    + constructor; try assumption.
+      constructor; constructor.
+      assumption.
+  - apply phoare_sound.
+    apply PH_Consequence with
+      (P' := {{ X = 0 /\ Y = 0 }})
+      (R' := [
+        {{ X = 0 /\ Y = 0 }};
+        {{ X = 2 }}
+      ] ++ [
+        {{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 2) }};
+        {{ (X = 1 /\ Y = 1) \/ (X = 2 /\ Y = 3) }}
+      ] ++ [
+        {{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 1) }};
+        {{ (X = 1 /\ Y = 2) \/ (X = 2 /\ Y = 3) }}
+      ])
+      (G' :=
+        [({{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 2) }}, <{ Y := Y + 1 ; X := X + 1 }>)] ++
+        [({{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 1) }}, <{ Y := Y + 2 ; X := X + 1 }>)]
+      )
+      (Q' := {{ X = 2 }}).
+    + auto.
+    + unfold stronger_rely.
+      simpl.
+      repeat (constructor; try solve [
+        intros st st' H_st H;
+        invert H;
+        invert H3;
+        invert H4;
+        invert H5;
+        invert H6;
+        invert H7;
+        invert H8;
+        invert H9;
+        lia
+      ]).
+    + unfold weaker_guar.
+      simpl.
+      constructor. {
+        constructor.
+        split.
+        - apply havoc_com_havoc_semantics.
+        - auto.
+      }
+      constructor. {
+        apply Exists_cons_tl.
+        constructor.
+        split.
+        - apply havoc_com_havoc_semantics.
+        - auto.
+      }
+      constructor.
+    + auto.
+    + apply PH_Par with
+        (P1 := {{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 2)}})
+        (P2 := {{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 1)}})
+        (Q1 := {{ (X = 1 /\ Y = 1) \/ (X = 2 /\ Y = 3)}})
+        (Q2 := {{ (X = 1 /\ Y = 2) \/ (X = 2 /\ Y = 3)}}); simpl.
+      * apply PH_Atomic.
+        eapply H_Seq.
+        -- apply H_Asgn.
+        -- eapply H_Consequence_pre; try apply H_Asgn.
+           intros st H_st.
+           unfold assertion_sub.
+           simpl.
+           rewrite t_update_eq.
+           rewrite t_update_neq; try assumption.
+           rewrite t_update_neq; try assumption.
+           rewrite t_update_eq.
+           lia.
+      * apply PH_Atomic.
+        eapply H_Seq.
+        -- apply H_Asgn.
+        -- eapply H_Consequence_pre; try apply H_Asgn.
+           intros st H_st.
+           unfold assertion_sub.
+           simpl.
+           rewrite t_update_eq.
+           rewrite t_update_neq; try assumption.
+           rewrite t_update_neq; try assumption.
+           rewrite t_update_eq.
+           lia.
+      * intros st H_st.
+        lia.
+      * intros st H_st.
+        lia.
+      * unfold non_interfering.
+        repeat (constructor; try solve [
+          constructor; try solve [constructor];
+          eapply H_Seq;
+          try apply H_Asgn;
+          eapply H_Consequence_pre;
+          try apply H_Asgn;
+          intros st H_st;
+          unfold assertion_sub;
+          simpl;
+          rewrite t_update_eq;
+          rewrite t_update_neq; try assumption;
+          rewrite t_update_neq; try assumption;
+          rewrite t_update_eq;
+          lia
+        ]).
+      * unfold non_interfering.
+        repeat (constructor; try solve [
+          constructor; try solve [constructor];
+          eapply H_Seq;
+          try apply H_Asgn;
+          eapply H_Consequence_pre;
+          try apply H_Asgn;
+          intros st H_st;
+          unfold assertion_sub;
+          simpl;
+          rewrite t_update_eq;
+          rewrite t_update_neq; try assumption;
+          rewrite t_update_neq; try assumption;
+          rewrite t_update_eq;
+          lia
+        ]).
+Qed.
