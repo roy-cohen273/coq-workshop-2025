@@ -8,6 +8,7 @@ From PLF Require Import Maps.
 From PLF Require Import Imp.
 From PLF Require Import Smallstep.
 From PLF Require Import Hoare.
+From PLF Require Import Hoare2.
 
 
 Ltac invert H := inversion H; subst; clear H.
@@ -128,9 +129,9 @@ Reserved Notation "'|-' '{{' P '}}' c '{{' Q '}}'"
                    Q custom assn at level 99).
 Inductive hoare_derivable : Assertion -> com -> Assertion -> Prop :=
   | H_Skip : forall P,
-      |- {{ P }} skip {{ P }}
+      |- {{ P }} <{ skip }> {{ P }}
   | H_Asgn : forall Q V a,
-      |- {{ Q [V |-> a] }} V := a {{ Q }}
+      |- {{ Q [V |-> a] }} <{ V := a }> {{ Q }}
   | H_Seq : forall P c Q d R,
       |- {{ Q }} d {{ R }} ->
       |- {{ P }} c {{ Q }} ->
@@ -1684,6 +1685,10 @@ Inductive remove_ghost_variables : list string -> com -> com -> Prop :=
       <(gvars)> c1 ~> c1' ->
       <(gvars)> c2 ~> c2' ->
       <(gvars)> <{ c1 ; c2 }> ~> <{ c1' ; c2' }>
+  | GSeqSkip1 : forall c1 c2 c2' gvars,
+      <(gvars)> c1 ~> skip ->
+      <(gvars)> c2 ~> c2' ->
+      <(gvars)> <{ c1 ; c2 }> ~> c2'
   | GIf : forall b c1 c1' c2 c2' gvars,
       <(gvars)> c1 ~> c1' ->
       <(gvars)> c2 ~> c2' ->
@@ -1863,6 +1868,46 @@ Proof.
       * assumption.
 Qed.
 
+Lemma par_multistep1
+    c1 c2 st c1' st'
+    (H_steps1 : c1 / st -->* c1' / st') :
+      <{ c1 || c2 }> / st -->* <{ c1' || c2 }> / st'.
+Proof.
+  remember (c1, st) as p.
+  remember (c1', st') as p'.
+  generalize dependent c1.
+  generalize dependent st.
+  induction H_steps1; intros; subst.
+  - invert Heqp.
+    constructor.
+  - destruct y as [c1_m st_m].
+    specialize (IHH_steps1 eq_refl st_m c1_m eq_refl).
+    apply multi_trans with (<{ c1_m || c2 }>, st_m); try assumption.
+    apply multi_R.
+    constructor.
+    assumption.
+Qed.
+
+Lemma par_multistep2
+    c1 c2 st c2' st'
+    (H_steps2 : c2 / st -->* c2' / st') :
+      <{ c1 || c2 }> / st -->* <{ c1 || c2' }> / st'.
+Proof.
+  remember (c2, st) as p.
+  remember (c2', st') as p'.
+  generalize dependent c2.
+  generalize dependent st.
+  induction H_steps2; intros; subst.
+  - invert Heqp.
+    constructor.
+  - destruct y as [c2_m st_m].
+    specialize (IHH_steps2 eq_refl st_m c2_m eq_refl).
+    apply multi_trans with (<{ c1 || c2_m }>, st_m); try assumption.
+    apply multi_R.
+    constructor.
+    assumption.
+Qed.
+
 
 Inductive no_par : com -> Prop :=
   | NP_Skip :
@@ -1974,6 +2019,39 @@ Definition rely_doesnt_restrict
     <<gvars>> st' ~ st'' /\
     Forall (fun r => r st -> r st'') R.
 
+Lemma remove_to_skip
+    gvars c st
+    (H_remove_gvars : <(gvars)> c ~> skip) :
+      exists st',
+        <<gvars>> st ~ st' /\
+        c / st -->* <{ skip }> / st'.
+Proof.
+  remember <{ skip }>.
+  generalize dependent st.
+  induction H_remove_gvars; intros; subst; try discriminate.
+  - exists st.
+    split.
+    + apply differ_refl.
+    + constructor.
+  - exists (g !-> aeval st a ; st).
+    split.
+    + apply t_update_gvar.
+      assumption.
+    + apply multi_R.
+      constructor.
+  - specialize (IHH_remove_gvars1 eq_refl st).
+    destruct IHH_remove_gvars1 as [st' [H_differ H_steps1]].
+    specialize (IHH_remove_gvars2 eq_refl st').
+    destruct IHH_remove_gvars2 as [st'' [H_differ' H_steps2]].
+    exists st''.
+    split.
+    + apply differ_trans with st'; assumption.
+    + apply seq_multistep.
+      right.
+      exists st'.
+      split; assumption.
+Qed.
+
 Lemma multistep_add_gvars
     gvars c_dhg st_dhg c_dhg' st_dhg' c_hg st_hg
     (H_np : no_par c_dhg)
@@ -2065,59 +2143,50 @@ Proof.
       split; auto.
     + specialize (IHH_remove_gvars1 st_hg st_dhg H_differ st_dhg_m <{ skip }> H_steps_1dhg).
       destruct IHH_remove_gvars1 as [skip' [st_hg_m [H_remove_gvars_skip [H_differ_m [H_steps_1hg H_eq_gvars1]]]]].
-      invert H_remove_gvars_skip.
-      * specialize (IHH_remove_gvars2 st_hg_m st_dhg_m H_differ_m st_dhg' c_dhg' H_steps_2dhg).
-        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
-        exists c_hg', st_hg'.
-        repeat split; try assumption.
-        -- apply seq_multistep.
-           right.
-           exists st_hg_m.
-           split; assumption.
-        -- rewrite Forall_forall in *.
-           intros g H_In_gvars.
-           transitivity (st_dhg_m g).
-           ++ apply H_eq_gvars1.
-              assumption.
-           ++ apply H_eq_gvars2.
-              assumption.
-      * set (st_dhg_m' := (g !-> aeval st_dhg_m a ; st_dhg_m)).
-        set (st_hg_m' := (g !-> aeval st_hg_m a ; st_hg_m)).
-        assert (H_differ_m' : <<gvars>> st_hg_m' ~ st_dhg_m). {
-          apply differ_trans with st_dhg_m'.
-          - intros x.
-            destruct (string_dec g x).
-            + subst.
-              left.
-              assumption.
-            + subst st_hg_m'.
-              subst st_dhg_m'.
-              rewrite t_update_neq; try assumption.
-              rewrite t_update_neq; try assumption.
-              apply H_differ_m.
-          - subst st_dhg_m'.
-            apply differ_symm.
-            apply t_update_gvar.
-            assumption.
-        }
-        specialize (IHH_remove_gvars2 st_hg_m' st_dhg_m H_differ_m' st_dhg' c_dhg' H_steps_2dhg).
-        destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
-        exists c_hg', st_hg'.
-        repeat split; try assumption.
-        -- apply seq_multistep.
-           right.
-           exists st_hg_m'.
-           split; try assumption.
-           apply multi_trans with (<{ g := a }>, st_hg_m); try assumption.
-           apply multi_R.
-           constructor.
-        -- rewrite Forall_forall in *.
-           intros g' H_In_gvars'.
-           transitivity (st_dhg_m g').
-           ++ apply H_eq_gvars1.
-              assumption.
-           ++ apply H_eq_gvars2.
-              assumption.
+      apply remove_to_skip with (st := st_hg_m) in H_remove_gvars_skip.
+      destruct H_remove_gvars_skip as [st_hg_m' [H_differ_m_ H_steps]].
+      assert (H_differ_m' : <<gvars>> st_hg_m' ~ st_dhg_m). {
+        apply differ_trans with st_hg_m; try assumption.
+        apply differ_symm.
+        assumption.
+      }
+      specialize (IHH_remove_gvars2 st_hg_m' st_dhg_m H_differ_m' st_dhg' c_dhg' H_steps_2dhg).
+      destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
+      exists c_hg', st_hg'.
+      repeat split; try assumption.
+      * apply seq_multistep.
+        right.
+        exists st_hg_m'.
+        split; try assumption.
+        apply multi_trans with (skip', st_hg_m); assumption.
+      * rewrite Forall_forall in *.
+        intros g' H_In_gvars'.
+        transitivity (st_dhg_m g').
+        -- apply H_eq_gvars1.
+           assumption.
+        -- apply H_eq_gvars2.
+           assumption.
+  - rename c1 into c1_hg.
+    rename c2 into c2_hg.
+    rename c2' into c2_dhg.
+    specialize (IHH_remove_gvars1 NP_Skip st_hg st_dhg H_differ st_dhg <{ skip }> (multi_refl cstep (<{ skip }>, st_dhg))).
+    destruct IHH_remove_gvars1 as [skip' [st_hg_m [H_remove_gvars_skip [H_differ_m [H_steps_1hg H_eq_gvars1]]]]].
+    apply remove_to_skip with (st := st_hg_m) in H_remove_gvars_skip.
+    destruct H_remove_gvars_skip as [st_hg_m' [H_differ_m_ H_steps]].
+    assert (H_differ_m' : <<gvars>> st_hg_m' ~ st_dhg). {
+      apply differ_trans with st_hg_m; try assumption.
+      apply differ_symm.
+      assumption.
+    }
+    specialize (IHH_remove_gvars2 H_np st_hg_m' st_dhg H_differ_m' st_dhg' c_dhg' H_steps_dhg).
+    destruct IHH_remove_gvars2 as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_2hg H_eq_gvars2]]]]].
+    exists c_hg', st_hg'.
+    repeat split; try assumption.
+    apply seq_multistep.
+    right.
+    exists st_hg_m'.
+    split; try assumption.
+    apply multi_trans with (skip', st_hg_m); assumption.
   - rename c1 into c1_hg.
     rename c1' into c1_dhg.
     rename c2 into c2_hg.
@@ -2210,62 +2279,36 @@ Proof.
     + specialize (IHH_steps_dhg H_remove_gvars IHH_remove_gvars).
       specialize (IHH_remove_gvars st_hg st H_differ st' <{ skip }> H1).
       destruct IHH_remove_gvars as [skip' [st_hg' [H_remove_gvars_skip [H_differ' [H_steps H_eq_gvars]]]]].
-      invert H_remove_gvars_skip.
-      * specialize (IHH_steps_dhg st_hg' H_differ').
-        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars']]]]].
-        exists c_hg'', st_hg''.
-        repeat split; try assumption.
-        -- econstructor.
-           1: constructor.
-           econstructor.
-           1: constructor. {
-             rewrite <- H0.
-             apply bdhg_eval with gvars; assumption.
-           }
-           apply seq_multistep.
-           right.
-           exists st_hg'.
-           split; assumption.
-        -- rewrite Forall_forall in *.
-           intros g H_In_gvars.
-           transitivity (st' g).
-           ++ apply H_eq_gvars.
-              assumption.
-           ++ apply H_eq_gvars'.
-              assumption.
-      * set (st_hg'_ := (g !-> aeval st_hg' a ; st_hg')).
-        assert (H_differ'_ : <<gvars>> st_hg'_ ~ st'). {
-          apply differ_trans with st_hg'; try assumption.
-          subst st_hg'_.
-          apply differ_symm.
-          apply t_update_gvar.
-          assumption.
+      apply remove_to_skip with (st := st_hg') in H_remove_gvars_skip.
+      destruct H_remove_gvars_skip as [st_hg'_ [H_differ_skip H_steps_skip]].
+      assert (H_differ'_ : <<gvars>> st_hg'_ ~ st'). {
+        apply differ_trans with st_hg'; try assumption.
+        apply differ_symm.
+        assumption.
+      }
+      specialize (IHH_steps_dhg st_hg'_ H_differ'_).
+      destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars']]]]].
+      exists c_hg'', st_hg''.
+      repeat split; try assumption.
+      * econstructor.
+        1: constructor.
+        econstructor.
+        1: constructor. {
+          rewrite <- H0.
+          apply bdhg_eval with gvars; assumption.
         }
-        specialize (IHH_steps_dhg st_hg'_ H_differ'_).
-        destruct IHH_steps_dhg as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [H_steps' H_eq_gvars']]]]].
-        exists c_hg'', st_hg''.
-        repeat split; try assumption.
-        -- econstructor.
-           1: constructor.
-           econstructor.
-           1: constructor. {
-             rewrite <- H0.
-             apply bdhg_eval with gvars; assumption.
-           }
-           apply seq_multistep.
-           right.
-           exists st_hg'_.
-           split; try assumption.
-           apply multi_trans with (<{ g := a }>, st_hg'); try assumption.
-           apply multi_R.
-           constructor.
-        -- rewrite Forall_forall in *.
-           intros g' H_In_gvars'.
-           transitivity (st' g').
-           ++ apply H_eq_gvars.
-              assumption.
-           ++ apply H_eq_gvars'.
-              assumption.
+        apply seq_multistep.
+        right.
+        exists st_hg'_.
+        split; try assumption.
+        apply multi_trans with (skip', st_hg'); assumption.
+      * rewrite Forall_forall in *.
+        intros g' H_In_gvars'.
+        transitivity (st' g').
+        -- apply H_eq_gvars.
+           assumption.
+        -- apply H_eq_gvars'.
+           assumption.
   - invert H_np.
     specialize (IHH_remove_gvars H0).
     clear H0.
@@ -2285,27 +2328,18 @@ Proof.
       2: invert H.
       specialize (IHH_remove_gvars st_hg st_dhg H_differ st_dhg'' <{ skip }> H0).
       destruct IHH_remove_gvars as [skip' [st_hg'' [H_remove_gvars_skip [H_differ'' [H_steps H_eq_gvars]]]]].
-      invert H_remove_gvars_skip.
-      * exists <{ skip }>, st_hg''.
-        repeat split; try (constructor; assumption); try assumption.
-        apply multi_R.
-        constructor.
+      apply remove_to_skip with (st := st_hg'') in H_remove_gvars_skip.
+      destruct H_remove_gvars_skip as [st_hg''_ [H_differ''_ H_steps']].
+      exists <{ skip }>, st_hg''_.
+      repeat split; try (constructor; assumption); try assumption.
+      * apply differ_trans with st_hg''; try assumption.
+        apply differ_symm.
         assumption.
-      * exists <{ skip }>, (g !-> aeval st_hg'' a ; st_hg'').
-        repeat split; try (constructor; assumption); try assumption.
-        -- apply differ_trans with st_hg''; try assumption.
-           apply differ_symm.
-           apply t_update_gvar.
-           assumption.
-        -- apply multi_R.
-           constructor.
-           apply multi_trans with (<{ g := a }>, st_hg''); try assumption.
-           apply multi_R.
-           constructor.
+      * apply multi_R.
+        constructor.
+        apply multi_trans with (skip', st_hg''); assumption.
   - invert H_np.
 Qed.
-
-
 
 Lemma step_add_gvars
     gvars c_dhg st_dhg c_dhg' st_dhg' c_hg st_hg
@@ -2313,50 +2347,40 @@ Lemma step_add_gvars
     (H_remove_gvars : <(gvars)> c_hg ~> c_dhg)
     (H_differ : <<gvars>> st_hg ~ st_dhg)
     (H_step_dhg : c_dhg / st_dhg --> c_dhg' / st_dhg') :
-      exists c_hg' st_hg',
+      exists c_hg_m st_hg_m c_hg' st_hg',
+        <<gvars>> st_hg_m ~ st_dhg /\
+        c_hg / st_hg -->* c_hg_m / st_hg_m /\
         <(gvars)> c_hg' ~> c_dhg' /\
-        <<gvars>> st_hg' ~ st_dhg' /\
-        (
-          (c_hg / st_hg --> c_hg' / st_hg' /\ (st_hg = st_hg' -> st_dhg = st_dhg')) \/
-          (c_hg / st_hg -->* c_hg' / st_hg' /\ st_dhg = st_dhg')
-        ).
+        << gvars>> st_hg' ~ st_dhg' /\
+        c_hg_m / st_hg_m --> c_hg' / st_hg' /\
+        Forall (fun g => st_dhg g = st_dhg' g) gvars.
 Proof.
   generalize dependent c_dhg'.
+  generalize dependent st_hg.
   induction H_remove_gvars; intros.
   - invert H_step_dhg.
   - invert H_step_dhg.
-    exists <{ skip }>, (x !-> aeval st_hg a ; st_hg).
-    repeat split.
-    + constructor.
+    exists <{ x := a }>, st_hg, <{ skip }>, (x !-> aeval st_hg a ; st_hg).
+    repeat split; try assumption; try (constructor; assumption).
     + intros x'.
       destruct (string_dec x x').
       * subst.
-        rewrite t_update_eq.
-        rewrite t_update_eq.
         right.
+        rewrite t_update_eq.
+        rewrite t_update_eq.
         apply adhg_eval with gvars; assumption.
       * rewrite t_update_neq; try assumption.
         rewrite t_update_neq; try assumption.
         apply H_differ.
-    + left.
-      split; try solve [constructor].
-      intros H_eq_st_hg.
-      symmetry.
-      replace (aeval st_dhg a) with (st_dhg x). {
-        apply t_update_same.
-      }
-      transitivity (st_hg x). {
-        destruct (H_differ x); auto.
+    + apply Forall_forall.
+      intros g H_In_gvars.
+      destruct (string_dec x g).
+      * subst.
         exfalso.
         auto.
-      }
-      transitivity (aeval st_hg a). {
-        rewrite H_eq_st_hg.
-        rewrite t_update_eq.
-        rewrite <- H_eq_st_hg.
-        reflexivity.
-      }
-      apply adhg_eval with gvars; assumption.
+      * symmetry.
+        apply t_update_neq.
+        assumption.
   - invert H_step_dhg.
   - rename c1 into c1_hg.
     rename c1' into c1_dhg.
@@ -2366,135 +2390,101 @@ Proof.
     specialize (IHH_remove_gvars1 H1).
     specialize (IHH_remove_gvars2 H2).
     clear H1 H2.
+    specialize (IHH_remove_gvars1 st_hg H_differ).
+    specialize (IHH_remove_gvars2 st_hg H_differ).
     invert H_step_dhg.
     + rename c1' into c1_dhg'.
-      rename H0 into H_step_1dhg.
-      specialize (IHH_remove_gvars1 H_differ c1_dhg' H_step_1dhg).
-      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [ H_differ' [[H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg']]]]]].
-      * exists <{ c1_hg' ; c2_hg }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        left.
-        split; try assumption.
-        constructor.
-        assumption.
-      * exists <{ c1_hg' ; c2_hg }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        right.
-        split; try assumption.
-        clear dependent st_dhg.
-        clear dependent st_dhg'.
-        clear dependent c1_dhg.
-        clear dependent c2_dhg.
-        clear dependent gvars.
-        clear dependent c1_dhg'.
-        remember (c1_hg, st_hg) as p.
-        remember (c1_hg', st_hg') as p'.
-        generalize dependent c1_hg.
-        generalize dependent st_hg.
-        induction H_step_1hg; intros; subst.
-        -- invert Heqp.
-           constructor.
-        -- destruct y as [c1_hg_m st_hg_m].
-           specialize (IHH_step_1hg eq_refl st_hg_m c1_hg_m eq_refl).
-           econstructor; try eassumption.
-           constructor.
-           assumption.
+      specialize (IHH_remove_gvars1 c1_dhg' H0).
+      destruct IHH_remove_gvars1 as [c1_hg_m [st_hg_m [c1_hg' [st_hg' [H_differ_m [H_steps_m [H_remove_gvars' [H_differ' [H_step' H_eq_gvars]]]]]]]]].
+      exists <{ c1_hg_m ; c2_hg }>, st_hg_m, <{ c1_hg' ; c2_hg }>, st_hg'.
+      repeat split; try assumption; try (constructor; assumption).
+      apply seq_multistep.
+      left.
+      exists c1_hg_m.
+      split; try reflexivity.
+      assumption.
     + clear IHH_remove_gvars1.
-      invert H_remove_gvars1.
-      * exists c2_hg, st_hg.
-        repeat split; try assumption.
+      apply remove_to_skip with (st := st_hg) in H_remove_gvars1.
+      destruct H_remove_gvars1 as [st_hg_m [H_differ_m H_steps_m]].
+      exists <{ skip ; c2_hg }>, st_hg_m, c2_hg, st_hg_m.
+      repeat split; try assumption; try (apply Forall_forall; auto).
+      * apply differ_trans with st_hg; try assumption.
+        apply differ_symm.
+        assumption.
+      * apply seq_multistep.
         left.
-        split; constructor.
-      * exists c2_hg, (g !-> aeval st_hg a ; st_hg).
-        repeat split; try assumption.
-        -- apply differ_trans with st_hg; try assumption.
-           apply differ_symm.
-           apply t_update_gvar.
-           assumption.
-        -- right.
-           split; try reflexivity.
-           econstructor.
-           ++ constructor.
-              constructor.
-           ++ econstructor; constructor.
-  - invert H_npia.
+        exists <{ skip }>.
+        split; try reflexivity.
+        assumption.
+      * apply differ_trans with st_hg; try assumption.
+        apply differ_symm.
+        assumption.
+      * constructor.
+  - rename c1 into c1_hg.
+    rename c2 into c2_hg.
+    rename c2' into c2_dhg.
+    clear IHH_remove_gvars1.
+    apply remove_to_skip with (st := st_hg) in H_remove_gvars1.
+    destruct H_remove_gvars1 as [st_hg_m1 [H_differ_m1_ H_steps_m1]].
+    assert (H_differ_m1 : <<gvars>> st_hg_m1 ~ st_dhg). {
+      apply differ_trans with st_hg; try assumption.
+      apply differ_symm.
+      assumption.
+    }
+    specialize (IHH_remove_gvars2 H_npia st_hg_m1 H_differ_m1 c_dhg' H_step_dhg).
+    destruct IHH_remove_gvars2 as [c_hg_m [st_hg_m2 [c_hg' [st_hg' [H_differ_m2 [H_steps_m2 [H_remove_gvars' [H_differ' [H_step_hg H_eq_gvars]]]]]]]]].
+    exists c_hg_m, st_hg_m2, c_hg', st_hg'.
+    repeat split; try assumption.
+    apply seq_multistep.
+    right.
+    exists st_hg_m1.
+    split; assumption.
+  - rename c1 into c1_hg.
+    rename c1' into c1_dhg.
+    rename c2 into c2_hg.
+    rename c2' into c2_dhg.
+    invert H_npia.
     specialize (IHH_remove_gvars1 H2).
     specialize (IHH_remove_gvars2 H4).
     clear H2 H4.
+    exists <{ if b then c1_hg else c2_hg end }>, st_hg.
     invert H_step_dhg.
-    + exists c1, st_hg.
-      repeat split; try assumption.
-      left.
-      split; constructor.
+    + exists c1_hg, st_hg.
+      repeat split; try assumption; try apply multi_refl; try (apply Forall_forall; auto).
+      constructor.
       rewrite <- H1.
       apply bdhg_eval with gvars; assumption.
-    + exists c2, st_hg.
-      repeat split; try assumption.
-      left.
-      split; constructor.
+    + exists c2_hg, st_hg.
+      repeat split; try assumption; try apply multi_refl; try (apply Forall_forall; auto).
+      constructor.
       rewrite <- H1.
       apply bdhg_eval with gvars; assumption.
-  - invert H_npia.
-    specialize (IHH_remove_gvars H1).
-    clear H1.
-    invert H_step_dhg.
-    exists <{ if b then c; while b do c end else skip end }>, st_hg.
-    repeat split; try assumption.
-    + constructor; try assumption; constructor; try assumption.
-      constructor; assumption.
-    + left.
-      split; constructor.
   - rename c into c_hg.
     rename c' into c_dhg.
-    invert H_npia.
     invert H_step_dhg.
+    exists <{ while b do c_hg end }>, st_hg, <{ if b then c_hg ; while b do c_hg end else skip end }>, st_hg.
+    repeat split; try assumption; try (constructor; assumption); try (apply Forall_forall; auto).
+    repeat constructor; assumption.
+  - rename c into c_hg.
+    rename c' into c_dhg.
+    invert H_step_dhg.
+    invert H_npia.
     assert (exists c_hg' st_hg',
-        <(gvars)> c_hg' ~> <{ skip }> /\
+        <(gvars)> c_hg' ~> skip /\
         <<gvars>> st_hg' ~ st_dhg' /\
         c_hg / st_hg -->* c_hg' / st_hg' /\ 
-        Forall (fun g => st_dhg g = st_dhg' g) gvars) as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_hg H_eq_gvars]]]]]. {
+        Forall (fun g => st_dhg g = st_dhg' g) gvars) as [c_hg' [st_hg' [H_remove_gvars_skip [H_differ' [H_steps_hg H_eq_gvars]]]]]. {
       apply multistep_add_gvars with c_dhg; assumption.
     }
-    invert H_remove_gvars'.
-    + exists <{ skip }>, st_hg'.
-      repeat split; try (constructor; assumption); try assumption.
-      left.
-      split.
-      * constructor.
-        assumption.
-      * intros. subst.
-        apply functional_extensionality.
-        intros x.
-        rewrite Forall_forall in H_eq_gvars.
-        specialize (H_eq_gvars x).
-        destruct (H_differ x); auto.
-        destruct (H_differ' x); auto.
-        transitivity (st_hg' x); auto.
-    + exists <{ skip }>, (g !-> aeval st_hg' a ; st_hg').
-      repeat split; try (constructor; assumption).
-      * apply differ_trans with st_hg'; try assumption.
-        apply differ_symm.
-        apply t_update_gvar.
-        assumption.
-      * left.
-        split.
-        -- constructor.
-           apply multi_trans with (<{ g := a }>, st_hg'); try assumption.
-           apply multi_R.
-           constructor.
-        -- intros.
-           apply functional_extensionality.
-           intros x.
-           rewrite Forall_forall in H_eq_gvars.
-           specialize (H_eq_gvars x).
-           destruct (H_differ x); auto.
-           destruct (H_differ' x); auto.
-           subst.
-           destruct (string_dec g x).
-           ++ subst.
-              auto.
-           ++ rewrite t_update_neq in H2; try assumption.
-              transitivity (st_hg' x); auto.
+    apply remove_to_skip with (st := st_hg') in H_remove_gvars_skip.
+    destruct H_remove_gvars_skip as [st_hg'' [H_differ'' H_steps_hg']].
+    exists <{ atomic c_hg end }>, st_hg, <{ skip }>, st_hg''.
+    repeat split; try assumption; try (constructor; assumption).
+    + apply differ_trans with st_hg'; try assumption.
+      apply differ_symm.
+      assumption.
+    + constructor.
+      apply multi_trans with (c_hg', st_hg'); assumption.
   - rename c1 into c1_hg.
     rename c1' into c1_dhg.
     rename c2 into c2_hg.
@@ -2505,127 +2495,36 @@ Proof.
     clear H1 H2.
     invert H_step_dhg.
     + rename c1' into c1_dhg'.
-      rename H0 into H_step_1dhg.
-      specialize (IHH_remove_gvars1 H_differ c1_dhg' H_step_1dhg).
-      destruct IHH_remove_gvars1 as [c1_hg' [st_hg' [H_remove_gvars1' [H_differ' [[H_step_1hg H_eq_down] | [H_step_1hg H_st_dhg_st_dhg']]]]]].
-      * exists <{ c1_hg' || c2_hg }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        left.
-        split; try assumption.
-        constructor.
-        assumption.
-      * exists <{ c1_hg' || c2_hg }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        right.
-        split; try assumption.
-        clear dependent st_dhg.
-        clear dependent st_dhg'.
-        clear dependent c1_dhg.
-        clear dependent c2_dhg.
-        clear dependent gvars.
-        clear dependent c1_dhg'.
-        remember (c1_hg, st_hg) as p.
-        remember (c1_hg', st_hg') as p'.
-        generalize dependent c1_hg.
-        generalize dependent st_hg.
-        induction H_step_1hg; intros; subst.
-        -- invert Heqp.
-           constructor.
-        -- destruct y as [c1_hg_m st_hg_m].
-           specialize (IHH_step_1hg eq_refl st_hg_m c1_hg_m eq_refl).
-           econstructor.
-           ++ constructor.
-              eassumption.
-           ++ assumption.
+      rename H0 into H_step_dhg.
+      clear IHH_remove_gvars2.
+      specialize (IHH_remove_gvars1 st_hg H_differ c1_dhg' H_step_dhg).
+      destruct IHH_remove_gvars1 as [c1_hg_m [st_hg_m [c1_hg' [st_hg' [H_differ_m [H_steps_m [H_remove_gvars' [H_differ' [H_step_hg H_eq_gvars]]]]]]]]].
+      exists <{ c1_hg_m || c2_hg }>, st_hg_m, <{ c1_hg' || c2_hg }>, st_hg'.
+      repeat split; try assumption; try (constructor; assumption).
+      apply par_multistep1.
+      assumption.
     + rename c2' into c2_dhg'.
-      rename H0 into H_step_2dhg.
-      specialize (IHH_remove_gvars2 H_differ c2_dhg' H_step_2dhg).
-      destruct IHH_remove_gvars2 as [c2_hg' [st_hg' [H_remove_gvars2' [H_differ' [[H_step_2hg H_eq_down] | [H_step_2hg H_st_dhg_st_dhg']]]]]].
-      * exists <{ c1_hg || c2_hg' }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        left.
-        split; try assumption.
-        constructor.
+      rename H0 into H_step_dhg.
+      clear IHH_remove_gvars1.
+      specialize (IHH_remove_gvars2 st_hg H_differ c2_dhg' H_step_dhg).
+      destruct IHH_remove_gvars2 as [c2_hg_m [st_hg_m [c2_hg' [st_hg' [H_differ_m [H_steps_m [H_remove_gvars' [H_differ' [H_step_hg H_eq_gvars]]]]]]]]].
+      exists <{ c1_hg || c2_hg_m }>, st_hg_m, <{ c1_hg || c2_hg' }>, st_hg'.
+      repeat split; try assumption; try (constructor; assumption).
+      apply par_multistep2.
+      assumption.
+    + clear IHH_remove_gvars1.
+      clear IHH_remove_gvars2.
+      apply remove_to_skip with (st := st_hg) in H_remove_gvars1.
+      destruct H_remove_gvars1 as [st_hg_m1 [H_differ_m1 H_steps_hg_m1]].
+      apply remove_to_skip with (st := st_hg_m1) in H_remove_gvars2.
+      destruct H_remove_gvars2 as [st_hg_m2 [H_differ_m2 H_steps_hg_m2]].
+      exists <{ skip || skip }>, st_hg_m2, <{ skip }>, st_hg_m2.
+      repeat split; try (apply differ_trans with st_hg; try assumption; apply differ_symm; apply differ_trans with st_hg_m1; assumption); try (constructor; assumption); try (apply Forall_forall; auto).
+      apply multi_trans with (<{ skip || c2_hg }>, st_hg_m1).
+      * apply par_multistep1.
         assumption.
-      * exists <{ c1_hg || c2_hg' }>, st_hg'.
-        repeat split; try (constructor; assumption); try assumption.
-        right.
-        split; try assumption.
-        clear dependent st_dhg.
-        clear dependent st_dhg'.
-        clear dependent c1_dhg.
-        clear dependent c2_dhg.
-        clear dependent gvars.
-        clear dependent c2_dhg'.
-        remember (c2_hg, st_hg) as p.
-        remember (c2_hg', st_hg') as p'.
-        generalize dependent c2_hg.
-        generalize dependent st_hg.
-        induction H_step_2hg; intros; subst.
-        -- invert Heqp.
-           constructor.
-        -- destruct y as [c2_hg_m st_hg_m].
-           specialize (IHH_step_2hg eq_refl st_hg_m c2_hg_m eq_refl).
-           econstructor.
-           ++ apply CS_Par2.
-              eassumption.
-           ++ assumption.
-    + clear IHH_remove_gvars1 IHH_remove_gvars2.
-      invert H_remove_gvars1; invert H_remove_gvars2.
-      * exists <{ skip }>, st_hg.
-        repeat split; try solve [constructor]; try assumption.
-        right.
-        split; try reflexivity.
-        apply multi_R.
-        constructor.
-      * exists <{ skip }>, (g !-> aeval st_hg a ; st_hg).
-        repeat split; try solve [constructor].
-        -- apply differ_trans with st_hg; try assumption.
-           apply differ_symm.
-           apply t_update_gvar.
-           assumption.
-        -- right.
-           split; try reflexivity.
-           econstructor.
-           ++ apply CS_Par2.
-              constructor.
-           ++ apply multi_R.
-              constructor.
-      * exists <{ skip }>, (g !-> aeval st_hg a ; st_hg).
-        repeat split; try solve [constructor].
-        -- apply differ_trans with st_hg; try assumption.
-           apply differ_symm.
-           apply t_update_gvar.
-           assumption.
-        -- right.
-           split; try reflexivity.
-           econstructor.
-           ++ apply CS_Par1.
-              constructor.
-           ++ apply multi_R.
-              constructor.
-      * exists <{ skip }>, (g0 !-> aeval (g !-> aeval st_hg a ; st_hg) a0 ; (g !-> aeval st_hg a ; st_hg)).
-        repeat split; try solve [constructor].
-        -- apply differ_trans with st_hg; try assumption.
-           apply differ_trans with (g !-> aeval st_hg a ; st_hg).
-           ++ apply differ_symm.
-              apply t_update_gvar.
-              assumption.
-           ++ apply differ_symm.
-              apply t_update_gvar.
-              assumption.
-        -- right.
-           split; try reflexivity.
-           econstructor. {
-             apply CS_Par1.
-             constructor.
-           }
-           econstructor. {
-             apply CS_Par2.
-             constructor.
-           }
-           apply multi_R.
-           constructor.
+      * apply par_multistep2.
+        assumption.
 Qed.
 
 
@@ -2710,53 +2609,57 @@ Proof.
     rename st'' into st_dhg''.
     specialize (IHC_dhg H_npia H_differ H_assumption_dhg c_hg H_remove_gvars H_valid_hg).
     destruct IHC_dhg as [c_hg' [st_hg' [C_hg [H_remove_gvars' [H_differ' [H_assumption_hg H_sat_guar_dhg]]]]]].
-    assert (exists c_hg'' st_hg'',
+    assert (exists c_hg_m st_hg_m c_hg'' st_hg'',
+        <<gvars>> st_hg_m ~ st_dhg' /\
+        c_hg' / st_hg' -->* c_hg_m / st_hg_m /\
         <(gvars)> c_hg'' ~> c_dhg'' /\
-        <<gvars>> st_hg'' ~ st_dhg'' /\
-        (
-          (c_hg' / st_hg' --> c_hg'' / st_hg'' /\ (st_hg' = st_hg'' -> st_dhg' = st_dhg'')) \/
-          (c_hg' / st_hg' -->* c_hg'' / st_hg'' /\ st_dhg' = st_dhg'')
-        )) as [c_hg'' [st_hg'' [H_remove_gvars'' [H_differ'' [[H_step_hg H_eq_down] | [H_step_hg H_st_dhg'_st_dhg'']]]]]]. {
+        << gvars>> st_hg'' ~ st_dhg'' /\
+        c_hg_m / st_hg_m --> c_hg'' / st_hg'' /\
+        Forall (fun g => st_dhg' g = st_dhg'' g) gvars) as [c_hg_m [st_hg_m [c_hg'' [st_hg'' [H_differ_m [H_steps_m [H_remove_gvars'' [H_differ'' [H_step_hg H_eq_gvars]]]]]]]]]. {
       apply step_add_gvars with c_dhg'; try assumption.
       eapply fcomp_npia.
-      - apply C_dhg.
+      - exact C_dhg.
       - assumption.
     }
-    + set (C_hg' := fcomp_cmp c_hg st_hg c_hg' st_hg' c_hg'' st_hg'' H_step_hg C_hg).
-      exists c_hg'', st_hg'', C_hg'.
-      assert (H_assumption_hg' : fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg'). {
-        simpl.
-        assumption.
-      }
-      apply H_valid_hg in H_assumption_hg' as H_conclusion_hg'.
-      destruct H_conclusion_hg' as [H_sat_guar_hg' H_postcondition_hg'].
-      simpl in H_sat_guar_hg'.
-      destruct H_sat_guar_hg' as [H_guar_step_hg' H_sat_guar_hg].
-      repeat split; try assumption.
-      destruct H_guar_step_hg' as [H_st_hg'_st_hg'' | H_guar_step_hg']; try (left; apply H_eq_down; assumption).
-      right.
+    assert (exists (C_hg_m : fcomp c_hg st_hg c_hg_m st_hg_m), fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg_m) as [C_hg_m H_assumption_hg_m]. {
+      eapply fcomp_app_steps; eassumption.
+    }
+    set (C_hg' := fcomp_cmp c_hg st_hg c_hg_m st_hg_m c_hg'' st_hg'' H_step_hg C_hg_m).
+    exists c_hg'', st_hg'', C_hg'.
+    assert (H_assumption_hg' : fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg'). {
+      simpl.
+      assumption.
+    }
+    apply H_valid_hg in H_assumption_hg' as H_conclusion_hg'.
+    destruct H_conclusion_hg' as [H_sat_guar_hg' H_postcondition_hg'].
+    simpl in H_sat_guar_hg'.
+    destruct H_sat_guar_hg' as [H_guar_step_hg' H_sat_guar_hg_m].
+    repeat split; try assumption.
+    destruct H_guar_step_hg' as [H_st_hg_m_st_hg'' | H_guar_step_hg'].
+    + subst.
+      left.
+      apply functional_extensionality.
+      intros x.
+      rewrite Forall_forall in H_eq_gvars.
+      specialize (H_eq_gvars x).
+      destruct (H_differ_m x); try (apply H_eq_gvars; assumption).
+      destruct (H_differ'' x); try (apply H_eq_gvars; assumption).
+      transitivity (st_hg'' x); auto.
+    + right.
       rewrite Exists_exists in *.
-      destruct H_guar_step_hg' as [[A c] [H_In_G [H_A_st_hg' H_steps]]].
+      destruct H_guar_step_hg' as [[A c] [H_In_G [H_A_st_hg_m H_steps]]].
       exists (A, c).
+      split; try assumption.
       unfold guar_havoc_gvars in H_G_havoc.
       rewrite Forall_forall in H_G_havoc.
       specialize (H_G_havoc (A, c) H_In_G).
+      simpl in H_G_havoc.
       destruct H_G_havoc as [H_A_dhg H_c_havoc].
-      repeat split; try assumption.
-      * apply H_A_dhg with st_hg'; try assumption.
+      split.
+      * apply H_A_dhg with st_hg_m; try assumption.
         apply differ_symm.
         assumption.
-      * unfold com_havoc_gvars in H_c_havoc.
-        apply H_c_havoc with st_hg' st_hg''; assumption.
-    + assert (exists (C_hg' : fcomp c_hg st_hg c_hg'' st_hg''), fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg') as [C_hg' H_assumption_hg']. {
-        eapply fcomp_app_steps; eassumption.
-      }
-      exists c_hg'', st_hg'', C_hg'.
-      apply H_valid_hg in H_assumption_hg' as H_conclusion_hg'.
-      destruct H_conclusion_hg' as [H_sat_guar_hg' H_postcondition_hg'].
-      repeat split; try assumption.
-      left.
-      assumption.
+      * apply H_c_havoc with st_hg_m st_hg''; assumption.
   - rename c into c_dhg.
     rename st into st_dhg.
     rename c' into c_dhg'.
@@ -2823,22 +2726,16 @@ Proof.
     apply differ_symm.
     assumption.
   }
-  invert H_remove_gvars'.
-  - apply H_valid in H_assumption_hg as H_conclusion_hg.
-    destruct H_conclusion_hg as [H_sat_guar_hg H_postcondition_hg].
-    apply H_postcondition_hg.
-    reflexivity.
-  - set (C_hg' := fcomp_cmp c_hg st_hg <{ g := a }> st_hg' <{ skip }> (g !-> aeval st_hg' a ; st_hg') (CS_Asgn st_hg' g a) C_hg).
-    assert (H_assumption_hg' : fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg'). {
-      simpl.
-      assumption.
-    }
-    apply H_valid in H_assumption_hg' as H_conclusion_hg'.
-    destruct H_conclusion_hg' as [H_sat_guar_hg' H_postcondition_hg'].
-    specialize (H_postcondition_hg' eq_refl).
-    apply H_Q_dhg with (g !-> aeval st_hg' a ; st_hg'); try assumption.
-    apply t_update_gvar.
-    assumption.
+  apply remove_to_skip with (st := st_hg') in H_remove_gvars'.
+  destruct H_remove_gvars' as [st_hg_m [H_differ_m H_steps]].
+  apply H_Q_dhg with st_hg_m; try assumption.
+  assert (exists (C_hg' : fcomp c_hg st_hg <{ skip }> st_hg_m), fcomp_assumption ({{ P_dhg /\ P_hg }}) (R_dhg ++ R_hg) C_hg') as [C_hg' H_assumption_hg']. {
+    eapply fcomp_app_steps; eassumption.
+  }
+  apply H_valid in H_assumption_hg' as H_conclusion_hg'.
+  destruct H_conclusion_hg' as [H_sat_guar_hg' H_postcondition_hg'].
+  apply H_postcondition_hg'.
+  reflexivity.
 Qed.
 
 
@@ -3046,13 +2943,6 @@ Proof.
     + admit.
 Admitted.
 
-Lemma assert_implies_refl
-    P :
-      P ->> P.
-Proof.
-  auto.
-Qed.
-
 Lemma H_Consequence_pre
     P P' Q c
     (H_valid : |- {{ P' }} c {{ Q }})
@@ -3068,7 +2958,7 @@ Qed.
 (* Example is taken from the paper "Owicki-Gries Reasoning for Weak Memory Models" by Ori Lahav and Viktor Vafeiadis, Fig. 11 (page 11). *)
 Example example2 :
   exists R G,
-  |= atomic skip ; X := X + 1 end || atomic skip ; X := X + 1 end sat ({{ X = 0 }}, R, G, {{ X = 2 }}).
+  |= atomic X := X + 1 end || atomic X := X + 1 end sat ({{ X = 0 }}, R, G, {{ X = 2 }}).
 Proof.
   assert (H_X_not_gvar : ~ In X [Y]). {
     intros []; try assumption.
@@ -3141,7 +3031,7 @@ Proof.
     simpl.
     rewrite H.
     reflexivity.
-  - constructor; constructor; constructor.
+  - eapply GPar; eapply GAtomic; eapply GSeqSkip1.
     + apply GAsgnGhost.
       left.
       reflexivity.
