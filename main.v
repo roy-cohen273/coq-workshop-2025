@@ -1672,36 +1672,39 @@ Reserved Notation " '<(' gvars ')>' c '~>' c' "
                   (at level 3,
                    c custom com at level 99,
                    c' custom com at level 99). 
-Inductive remove_ghost_variables : list string -> com -> com -> Prop :=
-  | GSkip : forall gvars,
+Inductive remove_ghost_variables (gvars : list string) : com -> com -> Prop :=
+  | GSkip :
       <(gvars)> skip ~> skip
-  | GAsgnNonGhost : forall x a gvars,
+  | GAsgnNonGhost : forall x a,
       ~ In x gvars ->
       aexp_dhg gvars a ->
       <(gvars)> x := a ~> x := a
-  | GAsgnGhost : forall g a gvars (H_In_gvars : In g gvars),
+  | GAsgnGhost : forall g a (H_In_gvars : In g gvars),
       <(gvars)> g := a ~> skip
-  | GSeq : forall c1 c1' c2 c2' gvars,
+  | GSeq : forall c1 c1' c2 c2',
       <(gvars)> c1 ~> c1' ->
       <(gvars)> c2 ~> c2' ->
       <(gvars)> <{ c1 ; c2 }> ~> <{ c1' ; c2' }>
-  | GSeqSkip1 : forall c1 c2 c2' gvars,
+  | GSeqSkip1 : forall c1 c2 c2',
       <(gvars)> c1 ~> skip ->
       <(gvars)> c2 ~> c2' ->
       <(gvars)> <{ c1 ; c2 }> ~> c2'
-  | GIf : forall b c1 c1' c2 c2' gvars,
+  | GIf : forall b c1 c1' c2 c2',
       <(gvars)> c1 ~> c1' ->
       <(gvars)> c2 ~> c2' ->
       bexp_dhg gvars b ->
       <(gvars)> if b then c1 else c2 end ~> if b then c1' else c2' end
-  | GWhile : forall b c c' gvars,
+  | GWhile : forall b c c',
       <(gvars)> c ~> c' ->
       bexp_dhg gvars b ->
       <(gvars)> while b do c end ~> while b do c' end
-  | GAtomic : forall c c' gvars,
+  | GAtomic : forall c c',
       <(gvars)> c ~> c' ->
       <(gvars)> atomic c end ~> atomic c' end
-  | GPar : forall c1 c1' c2 c2' gvars,
+  | GAtomicAsgn : forall c x a,
+      <(gvars)> c ~> x := a ->
+      <(gvars)> atomic c end ~> x := a
+  | GPar : forall c1 c1' c2 c2',
       <(gvars)> c1 ~> c1' ->
       <(gvars)> c2 ~> c2' ->
       <(gvars)> c1 || c2 ~> c1' || c2'
@@ -2338,6 +2341,25 @@ Proof.
       * apply multi_R.
         constructor.
         apply multi_trans with (skip', st_hg''); assumption.
+  - rename c into c_hg.
+    specialize (IHH_remove_gvars H_np st_hg st_dhg H_differ st_dhg' c_dhg' H_steps_dhg).
+    destruct IHH_remove_gvars as [c_hg' [st_hg' [H_remove_gvars' [H_differ' [H_steps_hg H_eq_gvars]]]]].
+    invert H_steps_dhg.
+    + exists <{ atomic c_hg end }>, st_hg.
+      repeat split; try (constructor; assumption); try assumption.
+    + invert H.
+      invert H0.
+      2: invert H.
+      apply remove_to_skip with (st := st_hg') in H_remove_gvars'.
+      destruct H_remove_gvars' as [st_hg'' [H_differ'' H_steps_hg']].
+      exists <{ skip }>, st_hg''.
+      repeat split; try (constructor; assumption); try assumption.
+      * apply differ_trans with st_hg'; try assumption.
+        apply differ_symm.
+        assumption.
+      * apply multi_R.
+        constructor.
+        apply multi_trans with (c_hg', st_hg'); assumption.
   - invert H_np.
 Qed.
 
@@ -2485,6 +2507,22 @@ Proof.
       assumption.
     + constructor.
       apply multi_trans with (c_hg', st_hg'); assumption.
+  - rename c into c_hg.
+    specialize (IHH_remove_gvars H_npia st_hg H_differ c_dhg' H_step_dhg).
+    destruct IHH_remove_gvars as [c_hg_m [st_hg_m [c_hg' [st_hg' [H_differ_m [H_steps_m [H_remove_gvars' [H_differ' [H_step_hg H_eq_gvars]]]]]]]]].
+    invert H_step_dhg.
+    apply remove_to_skip with (st := st_hg') in H_remove_gvars'.
+    destruct H_remove_gvars' as [st_hg_m' [H_differ_m' H_steps_m']].
+    exists <{ atomic c_hg end }>, st_hg, <{ skip }>, st_hg_m'.
+    repeat split; try assumption; try (constructor; assumption).
+    + apply differ_trans with st_hg'; try assumption.
+      apply differ_symm.
+      assumption.
+    + constructor.
+      apply multi_trans with (c_hg_m, st_hg_m); try assumption.
+      apply multi_trans with (c_hg', st_hg'); try assumption.
+      apply multi_R.
+      assumption.
   - rename c1 into c1_hg.
     rename c1' into c1_dhg.
     rename c2 into c2_hg.
@@ -2958,7 +2996,7 @@ Qed.
 (* Example is taken from the paper "Owicki-Gries Reasoning for Weak Memory Models" by Ori Lahav and Viktor Vafeiadis, Fig. 11 (page 11). *)
 Example example2 :
   exists R G,
-  |= atomic X := X + 1 end || atomic X := X + 1 end sat ({{ X = 0 }}, R, G, {{ X = 2 }}).
+  |= X := X + 1 || X := X + 1 sat ({{ X = 0 }}, R, G, {{ X = 2 }}).
 Proof.
   assert (H_X_not_gvar : ~ In X [Y]). {
     intros []; try assumption.
@@ -3031,7 +3069,7 @@ Proof.
     simpl.
     rewrite H.
     reflexivity.
-  - eapply GPar; eapply GAtomic; eapply GSeqSkip1.
+  - eapply GPar; eapply GAtomicAsgn; eapply GSeqSkip1.
     + apply GAsgnGhost.
       left.
       reflexivity.
