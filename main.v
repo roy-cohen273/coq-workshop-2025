@@ -3027,15 +3027,11 @@ Proof.
     intros st st' H_differ.
     specialize (H_differ X).
     destruct H_differ; try solve [exfalso; auto].
-    simpl.
-    rewrite H.
-    reflexivity.
+    verify_assertion.
   - unfold assertion_doesnt_restrict.
     intros st.
     exists (Y !-> 0 ; st).
-    simpl.
-    rewrite t_update_eq.
-    split; try reflexivity.
+    verify_assertion.
     apply t_update_gvar.
     left.
     reflexivity.
@@ -3066,9 +3062,7 @@ Proof.
     intros st st' H_differ.
     specialize (H_differ X).
     destruct H_differ; try solve [exfalso; auto].
-    simpl.
-    rewrite H.
-    reflexivity.
+    verify_assertion.
   - eapply GPar; eapply GAtomicAsgn; eapply GSeqSkip1.
     + apply GAsgnGhost.
       left.
@@ -3141,30 +3135,14 @@ Proof.
         eapply H_Seq.
         -- apply H_Asgn.
         -- eapply H_Consequence_pre; try apply H_Asgn.
-           intros st H_st.
-           unfold assertion_sub.
-           simpl.
-           rewrite t_update_eq.
-           rewrite t_update_neq; try assumption.
-           rewrite t_update_neq; try assumption.
-           rewrite t_update_eq.
-           lia.
+           verify_assertion.
       * apply PH_Atomic.
         eapply H_Seq.
         -- apply H_Asgn.
         -- eapply H_Consequence_pre; try apply H_Asgn.
-           intros st H_st.
-           unfold assertion_sub.
-           simpl.
-           rewrite t_update_eq.
-           rewrite t_update_neq; try assumption.
-           rewrite t_update_neq; try assumption.
-           rewrite t_update_eq.
-           lia.
-      * intros st H_st.
-        lia.
-      * intros st H_st.
-        lia.
+           verify_assertion.
+      * verify_assertion.
+      * verify_assertion.
       * unfold non_interfering.
         repeat (constructor; try solve [
           constructor; try solve [constructor];
@@ -3172,14 +3150,7 @@ Proof.
           try apply H_Asgn;
           eapply H_Consequence_pre;
           try apply H_Asgn;
-          intros st H_st;
-          unfold assertion_sub;
-          simpl;
-          rewrite t_update_eq;
-          rewrite t_update_neq; try assumption;
-          rewrite t_update_neq; try assumption;
-          rewrite t_update_eq;
-          lia
+          verify_assertion
         ]).
       * unfold non_interfering.
         repeat (constructor; try solve [
@@ -3188,13 +3159,6 @@ Proof.
           try apply H_Asgn;
           eapply H_Consequence_pre;
           try apply H_Asgn;
-          intros st H_st;
-          unfold assertion_sub;
-          simpl;
-          rewrite t_update_eq;
-          rewrite t_update_neq; try assumption;
-          rewrite t_update_neq; try assumption;
-          rewrite t_update_eq;
-          lia
+          verify_assertion
         ]).
 Qed.
