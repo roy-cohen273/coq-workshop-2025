@@ -15,6 +15,9 @@ Inductive hoare_derivable : Assertion -> com -> Assertion -> Prop :=
       |- {{ P }} skip {{ P }}
   | H_Asgn : forall Q V a,
       |- {{ Q [V |-> a] }} V := a {{ Q }}
+  | H_Atomic : forall P c Q,
+      |- {{ P }} c {{ Q }} ->
+      |- {{ P }} atomic c end {{ Q }}
   | H_Seq : forall P c Q d R,
       |- {{ Q }} d {{ R }} ->
       |- {{ P }} c {{ Q }} ->
