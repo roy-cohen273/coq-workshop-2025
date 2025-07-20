@@ -124,7 +124,7 @@ Fixpoint rely (d : dcom) (Q : Assertion) : list Assertion :=
   | DCIf P b d1 Q1 d2 Q2 => P :: rely d1 Q1 ++ rely d2 Q2
   | DCAtomic P d Q' => [P; Q]
   | DCWhile P b d Q' => Q' :: Q :: rely d Q'
-  | DCPar P d1 Q1 d2 Q2 => P :: Q :: rely d1 Q1 ++ rely d2 Q2
+  | DCPar P d1 Q1 d2 Q2 => Q :: rely d1 Q1 ++ rely d2 Q2
   end.
 
 Definition rely_from (dec : decorated) : list Assertion :=

@@ -135,7 +135,7 @@ Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Asserti
       {{ Q1 /\ Q2 }} ->> Q ->
       non_interfering R1 G2 ->
       non_interfering R2 G1 ->
-      |- c1 || c2 sat (P, ([P; Q] ++ R1 ++ R2), G1 ++ G2, Q)
+      |- c1 || c2 sat (P, (Q :: R1 ++ R2), G1 ++ G2, Q)
 
   where "'|-' c 'sat' '(' P ',' R ',' G ',' Q ')'" := (phoare_derivable c P R G Q).
 
@@ -810,7 +810,6 @@ Lemma par_lemma
     (H_Q1_Q2_Q : {{ Q1 /\ Q2 }} ->> Q)
     (H_non_interfering1 : non_interfering R1 G2)
     (H_non_interfering2 : non_interfering R2 G1)
-    (H_P_R : In P R)
     (H_Q_R : In Q R)
     (H_R1_R : incl R1 R)
     (H_R2_R : incl R2 R)
@@ -995,33 +994,25 @@ Lemma phoare_par
     (H_Q1_Q2_Q : {{ Q1 /\ Q2 }} ->> Q)
     (H_non_interfering1 : non_interfering R1 G2)
     (H_non_interfering2 : non_interfering R2 G1) :
-      |= c1 || c2 sat (P, ([P; Q] ++ R1 ++ R2), G1 ++ G2, Q).
+      |= c1 || c2 sat (P, (Q :: R1 ++ R2), G1 ++ G2, Q).
 Proof.
   rewrite bvalid_iff_fvalid in *.
   unfold phoare_valid_forward.
   intros st c' st' C H_assumption.
   set (lemma := par_lemma).
-  specialize (lemma c1 c2 P P1 P2 ([P; Q] ++ R1 ++ R2) R1 R2 (G1 ++ G2) G1 G2 Q Q1 Q2 H_c1_valid H_c2_valid H_P_P1_P2 H_Q1_Q2_Q H_non_interfering1 H_non_interfering2).
-  assert (In P ([P; Q] ++ R1 ++ R2)) as H_P_R. {
-    apply in_or_app.
-    simpl.
-    auto.
-  }
-  specialize (lemma H_P_R).
-  assert (In Q ([P; Q] ++ R1 ++ R2)) as H_Q_R. {
-    apply in_or_app.
-    simpl.
-    auto.
+  specialize (lemma c1 c2 P P1 P2 (Q :: R1 ++ R2) R1 R2 (G1 ++ G2) G1 G2 Q Q1 Q2 H_c1_valid H_c2_valid H_P_P1_P2 H_Q1_Q2_Q H_non_interfering1 H_non_interfering2).
+  assert (In Q (Q :: R1 ++ R2)) as H_Q_R. {
+    apply in_eq.
   }
   specialize (lemma H_Q_R).
-  assert (incl R1 ([P; Q] ++ R1 ++ R2)) as H_R1_R. {
-    apply incl_appr.
+  assert (incl R1 (Q :: R1 ++ R2)) as H_R1_R. {
+    apply incl_tl.
     apply incl_appl.
     apply incl_refl.
   }
   specialize (lemma H_R1_R).
-  assert (incl R2 ([P; Q] ++ R1 ++ R2)) as H_R2_R. {
-    apply incl_appr.
+  assert (incl R2 (Q :: R1 ++ R2)) as H_R2_R. {
+    apply incl_tl.
     apply incl_appr.
     apply incl_refl.
   }
