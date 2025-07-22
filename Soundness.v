@@ -1,9 +1,20 @@
+(*
+  In this file, we will define the semantic side of things: proof systems
+  for specifications (both regular Hoare tripplets and our new rely-guarantee
+  specifications).
+
+  Then, we will prove soundness for the later proof system w.r.t. specification
+  validity (as defined in Semantics.v).
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import List. Import ListNotations.
 From PLF Require Import Smallstep.
 From PLF Require Import Hoare.
 From PLF Require Import Semantics.
 
+
+(* Proof system for regular Hoare tripplets. *)
 
 Reserved Notation "'|-' '{{' P '}}' c '{{' Q '}}'"
                   (at level 2,
@@ -37,6 +48,7 @@ Inductive hoare_derivable : Assertion -> com -> Assertion -> Prop :=
   
   where "'|-' '{{' P '}}' c '{{' Q '}}'" := (hoare_derivable P c Q).
 
+(* Soudness is assumed. *)
 Theorem hoare_sound
     P c Q
     (H_derivable : |- {{ P }} c {{ Q }}) :
@@ -44,11 +56,11 @@ Theorem hoare_sound
 Admitted.
 
 
-(* Specification derivability *)
+(* Proof system for rely-guarantee specifications. *)
 
 (* Before we define derivability, we will need some helpers for the
    parallel composition rule (non interference) and the consequence
-   rule (rely strengthening, guar weakening) *)
+   rule (rely strengthening, guarantee weakening) *)
 
 Definition non_interfering
     (R : list Assertion)
@@ -139,6 +151,13 @@ Inductive phoare_derivable : com -> Assertion -> list Assertion -> list (Asserti
 
   where "'|-' c 'sat' '(' P ',' R ',' G ',' Q ')'" := (phoare_derivable c P R G Q).
 
+
+(*
+  Soundness for this proof system, w.r.t. specification validity.
+
+  The proof is split into many lemmas: a lemma for each type of command.
+  They are then put together to prove soundness using induction.
+*)
 
 (* The proof for the consequence rule is split into 4 part:
    * precondition strengthening
@@ -264,7 +283,7 @@ Proof.
   eapply phoare_postcondition_weakening; try eassumption.
 Qed.
 
-(* While we're on the topic of rely strengthening / guar weakening,
+(* While we're on the topic of rely strengthening / guarantee weakening,
    let's prove their relationship with incl. *)
 
 Lemma incl_weaker_rely
