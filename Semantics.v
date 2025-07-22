@@ -1,3 +1,11 @@
+(*
+  In this file, we will define the programming language we're working with,
+  along with its smallstep semantics.
+
+  We will also define what is a specification, and what is means,
+  semantically, for a command to satisfy a specification.
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import List. Import ListNotations.
 From PLF Require Import Maps.
@@ -7,10 +15,30 @@ From PLF Require Import Hoare.
 
 Ltac invert H := inversion H; subst; clear H.
 
-
-(* Add atomic blocks, parallel composition, and havoc to the language,
-   and redefine the smallstep semantics.
-   In the new semantics, expression evaluation is instantanuous. *)
+(*
+  Our programming language will be similar to the Imp language defined in
+  PLF, except with 3 new types of commands:
+  - Atomic blocks.
+  - Parallel composition.
+  - Havoc commands.
+    (Not intended for actual use, only as an auxiliary to the ghost variable
+    rule).
+  
+  The semantics will also be very similar to PLF's Imp, but with instant
+  expression evaluation. That is, we'll use bigstep semantics ([aeval],
+  [beval]) instead of smallstep semantics ([-->a, -->b]) when evaluating
+  expression.
+  Also, our 3 new command types will have the following semantics:
+  - For atomic blocks [<{ atomic c end }>], it will progress to <{ skip }>
+    in a single step, and have the same effect on the state as multiple
+    steps done by the inner command [c].
+  - For parallel composition [<{ c1 || c2 }>], it will progress either by
+    taking a step in the inner left command [c1] or by taking a step in the
+    inner right command [c2].
+  - For a havoc command [<{ havoc vars }>], it will progress to <{ skip }>
+    in a single step, and its effect on the state would be to chage the
+    values of [vars] indeterministically.
+*)
 
 Inductive com : Type :=
   | CSkip : com
@@ -102,7 +130,9 @@ Notation " t '/' st '-->*' t' '/' st' " :=
   (multi cstep  (t,st) (t',st'))
   (at level 40, st at level 39, t' at level 39).
 
-(* Redo standard Hoare logic with the new smallstep semantics. *)
+
+(* Redo standard Hoare logic semntics with the new smallstep semantics. *)
+
 Definition hoare_valid (P : Assertion) (c : com) (Q : Assertion) : Prop :=
   forall st st',
     P st ->
@@ -117,6 +147,16 @@ Notation "'|=' '{{' P '}}' c '{{' Q '}}'" :=
           Q custom assn at level 99).
 
 
+(*
+  Next up is to define a computation.
+  A computation is a series of transitions, each of which is either a
+  component transition or an enviroment transition.
+
+  Component transitions behave like the smallstep semantics (defined above).
+
+  Enviroment transitions can do whatever they want to the state of the
+  variables, but cannot change the command.
+*)
 (* There are 2 ways to define a computation, "backwards" and "forwards".
    The "backwards" definition is generally easier to work with,
    but for some proofs (notably the soundness of the parallel rule)
@@ -161,7 +201,12 @@ Inductive fcomp : com -> state -> com -> state -> Type :=
 
 (* We will define 2 ways for a specification to be valid,
    one with "backwards" computations and one with "farwards" computations.
-   We will later show these 2 notions of specification validity are equivalent. *)
+   We will later show these 2 notions of specification validity are equivalent.
+   
+   For each direction, we will seperately define the assumption induced from
+   the precondition and rely, and the conclusion induced from the postcondition
+   and guarantee. Specification validity, then, is defined to mean that every
+   computation that satisfies the assumption must also satisfy the conclusion. *)
 
 Fixpoint bcomp_sat_rely
     {c st c' st'}
@@ -282,6 +327,8 @@ Notation "'f|=' c 'sat' '(' P ',' R ',' G ',' Q ')'" :=
 
 (* "backwards" and "forwards" equivalency *)
 
+(* This function takes a "backwards" computation and a "forwards" computation
+   and appends them. It returns the result as a "backwards" computation. *)
 Fixpoint bapp
     {c st c' st' c'' st''}
     (fC : fcomp c st c' st')
@@ -360,6 +407,8 @@ Proof.
   split; assumption.
 Qed.
 
+(* This function takes a "backwards" computation and a "forwards" computation
+   and appends them. It returns the result as a "forwards" computation. *)
 Fixpoint fapp
     {c st c' st' c'' st''}
     (fC : fcomp c st c' st')
