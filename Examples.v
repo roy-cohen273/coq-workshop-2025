@@ -442,14 +442,14 @@ Proof.
 Qed.
 
 Example CoRR0 : decoration_derivable <{{
-  p{{ X = 0 }}
-    a{{ X = 0 }}
+  p{{ X <> 2 }}
+    a{{ X <> 2 }}
     X := 1 ;
     a{{ X = 1 }}
     X := 2
     {{ True }}
   ||
-    a{{ X = 0 \/ X = 1 \/ X = 2 }}
+    a{{ True }}
     a := X ;
     a{{ a = 2 -> X = 2 }}
     b := X
