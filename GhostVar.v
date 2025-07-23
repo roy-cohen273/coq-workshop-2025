@@ -1,3 +1,77 @@
+(*
+  In this file, we will state and prove the ghost variable rule.
+
+  The rule says that given a command that satisfies some specification,
+  we can delete some of the variables from the command and (sort of)
+  retain the specification. The variables we delete are called the ghost
+  variables.
+
+  For the ghost variable rule to apply, there are some conditions on
+  the specification:
+  - The precondition must be split to two parts: [{{ P_dhg /\ P_hg }}]
+    * [P_dhg] doesn't depend on ghost variables.
+    * [P_hg] isn't restrictive in the sense that every state satisfies it,
+      up to changes to ghost variables. I.e. for every state [st], there
+      exists a state [st'] that only differs from [st] on ghost
+      variables, s.t. [st'] satisfies [P_hg]).
+  - The rely must be split to two parts: [R_dhg ++ R_hg]
+    * [R_dhg] doesn't depend on ghost variables.
+    * [R_hg] isn't restrictive in the sense that every state transition
+      satisfies it, up to changes to ghost variables in the state after
+      the transition. I.e. for every state transition [st] to [st'], there
+      exists a state [st''] that only differs from [st'] on ghost
+      variables, s.t. [R_hg] is satisfied by the transition from [st] to
+      [st''].
+  - The guarantee must not restrict the ghost variables. For every guarded
+    command [(Q, c)]:
+      * [Q] doesn't depend on ghost variables.
+      * [c]'s bigstep semantics is blind to changes to ghost variables.
+        I.e. if [c / st -->* <{ skip }> / st'], we can change the values
+        of ghost variables in [st] and [st'] and the new states will still
+        satisfy [c / st -->* <{ skip }> / st'].
+        The easiest way to achieve this is by having a command of shape
+        [<{ havoc gvars ; c ; havoc gvars }>].
+    - The postcondition must not depend on ghost variables.
+
+  The heart of the problem is as follows: given a computation for the
+  command without the ghost variables, we need to create a computation
+  for the command with the ghost variables. We'll call this "adding gvars".
+
+  Adding gvars must be done in a way that preserves the assumption
+  (postcondition and rely), and thus we can use the fact that the command
+  with the ghost variables satisfies some specification, and get that the
+  computation after adding gvars satisfies the conclusion (postcondition
+  and guarantee). From there, it's not difficult to show that the original
+  computation also satisfies the conclusion.
+
+  Adding gvars is done in 3 steps:
+  1. [multistep_add_gvars] lemma: If we have a series of steps in the
+     command without the ghost variables, we can add gvars and get a series
+     of steps in the command with the ghost variables.
+  2. [step_add_gvars] lemma: If we have a single step in the command without
+     the ghost variables, we can add gvars and get a single step in the
+     command with the ghost variables, preceded by a series of steps that
+     don't change the state (up to changes to ghost variables).
+  3. [fcomp_add_gvars] lemma: Adding gvars to a computation.
+
+  Notes:
+  - [multistep_add_gvars] works for any series of steps
+    [c / st -->* c' / st']. In retrospect, it would've been sufficient
+    to only prove this for series of steps that end in [<{ skip }>] (i.e.
+    [c / st -->* <{ skip }> / st']). Under this perspective,
+    [multistep_add_gvars] is a statement about adding gvars to bigstep
+    semantics.
+  - Since it's a statement about bigstep semantics, [multistep_add_gvars]
+    doesn't work on commands that include parallel composition.
+  - While it seems that [step_add_gvars] is a special case of
+    [multistep_add_gvars], it is necessary to to prove [multistep_add_gvars]
+    before proving [step_add_gvars], because the smallstep semantics of an
+    atomic block depends on the bigstep semantics of the inner command.
+    So what does [step_add_gvars] bring to the table? It can work on
+    commands that include parallel composition. The only restriction is that
+    the command cannot include parallel composition insinde an atomic block.
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import List. Import ListNotations.
 From Coq Require Import Logic.FunctionalExtensionality.
@@ -204,6 +278,7 @@ Inductive remove_ghost_variables (gvars : list string) : com -> com -> Prop :=
   where " '<(' gvars ')>' c '~>' c' " := (remove_ghost_variables gvars c c').
 
 
+(* Helper lemma specifying the bigstep semantics of sequential composition. *)
 Lemma seq_multistep
     cl1 cr1 c3 st1 st3 :
   (<{ cl1 ; cr1 }> / st1 -->* c3 / st3) <->
@@ -298,6 +373,8 @@ Lemma multi_iff_rmulti
     {T : Type} (R : T -> T -> Prop) x y :
       multi R x y <-> rmulti R x y.
 Admitted.
+
+(* Helper inductive structure and lemma specifying the bigstep semantics of while loops. *)
 
 Inductive while_multistep (b : bexp) : com -> state -> com -> state -> Prop :=
   | WMS_empty' : forall c st,
@@ -448,6 +525,7 @@ Inductive no_par_in_atomic : com -> Prop :=
       no_par_in_atomic c2 ->
       no_par_in_atomic <{ c1 || c2 }>.
 
+(* NPIA is preserved when taking a single step. *)
 Lemma step_npia
     c st c' st'
     (H_npia : no_par_in_atomic c)
@@ -485,6 +563,7 @@ Proof.
     + constructor.
 Qed.
 
+(* NPIA is preserved under computations. *)
 Lemma fcomp_npia
     c st c' st'
     (C : fcomp c st c' st')
@@ -1268,6 +1347,15 @@ Proof.
   reflexivity.
 Qed.
 
+
+(*
+  Finally, after proving the ghost variable rule, we prove two lemmas
+  that handle commands of shape [<{ havoc gvars ; c ; havoc gvars }>].
+  These will help us when we use the ghost variable rule: we will use the
+  consequence rule to transform each command [c] in the guarantee into
+  [<{ havoc gvars ; c ; havoc gvars }>], so we can then use the ghost
+  variable rule.
+*)
 
 Lemma havoc_com_havoc_gvars
     gvars c :

@@ -29,9 +29,9 @@ Ltac invert H := inversion H; subst; clear H.
   [beval]) instead of smallstep semantics ([-->a, -->b]) when evaluating
   expression.
   Also, our 3 new command types will have the following semantics:
-  - For atomic blocks [<{ atomic c end }>], it will progress to <{ skip }>
-    in a single step, and have the same effect on the state as multiple
-    steps done by the inner command [c].
+  - For an atomic block [<{ atomic c end }>], it will progress to <{ skip }>
+    in a single step, and have the same effect on the state as the inner
+    command's bigstep semantics (i.e. [c / st -->* <{ skip }> / st']).
   - For parallel composition [<{ c1 || c2 }>], it will progress either by
     taking a step in the inner left command [c1] or by taking a step in the
     inner right command [c2].
