@@ -1,3 +1,12 @@
+(*
+  In this file, we'll see example commands and proofs of their
+  specification.
+
+  A lot of the examples are taken from these two papers:
+  - The Rely-Guarantee Method for Verifying Shared Variable Concurrent Programs: https://link.springer.com/content/pdf/10.1007/BF01211617.pdf.
+  - Owicki-Gries Reasoning for Weak Memory Models: https://plv.mpi-sws.org/ogra/full-paper.pdf.
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import List. Import ListNotations.
 From Coq Require Import Lia.
@@ -152,7 +161,7 @@ Qed.
 (* The next example is {{ X = 0 }} X++ || X++ {{ X = 2 }}
    First, we prove a version with a ghost variable Y,
    and then use the ghost variable rule to get rid of it. *)
-(* Example is taken from the paper "Owicki-Gries Reasoning for Weak Memory Models" by Ori Lahav and Viktor Vafeiadis, Fig. 11 (page 11). *)
+
 Example par_increment_with_ghosts : decoration_derivable <{{
   p{{ X = 0 /\ Y = 0 }}
     at{{ (X = 0 /\ Y = 0) \/ (X = 1 /\ Y = 2) }}
@@ -266,6 +275,7 @@ Proof.
 Qed.
 
 (* The next few examples are simple tests of the decorations of each command type. *)
+
 Example skip_example : decoration_derivable <{{
   s{{ X = 12 }}
   skip
@@ -362,6 +372,7 @@ Proof.
 Qed.
 
 (* Lastly, we have a few well-known programs, the last of which is Peterson's algorithm for mutual exclusion. *)
+
 Example message_passing (n : nat) : decoration_derivable <{{
   p{{ Y = 0 }}
     a{{ True }}
@@ -693,4 +704,3 @@ Example Petersons's_algorithm : decoration_derivable <{{
 Proof.
   verify.
 Qed.
-
