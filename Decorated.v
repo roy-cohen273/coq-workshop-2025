@@ -1,3 +1,14 @@
+(*
+  In this file we will define decorated commands (and almost-sensible
+  notations for them).
+
+  We'll define a function that extracts a regular command from the
+  decorated command, and a function that extracts verification conditions
+  from the decorated commands. We will then prove that if the verification
+  conditions are met, then the extracted regular command satisfies the
+  specification implied by the decorations.
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import List. Import ListNotations.
 From PLF Require Import Maps.
@@ -6,8 +17,20 @@ From PLF Require Import Semantics.
 From PLF Require Import Soundness.
 From PLF Require Import GhostVar.
 
-(* dcom represents a part of a decorated command.
-   Specifically, it represents a command and its precondition. *)
+(*
+  [dcom] represents a part of a decorated command.
+  Specifically, it represents a command and its precondition.
+
+  In retrospect, it'd probably be better for [dcom] to represent a command
+  and its _postcondition_. The advantage of using the precondition is that
+  extracting the guarded commands is slightly easier, but the disadvantage
+  is that the notations are messed-up: Coq doesn't like it when there are a
+  lot of notations that all begin the same (all notations start in [{{ P }}]
+  in our case). To go around this problem when using the precondition
+  approach (as done below), each notation starts with a letter specifying
+  the type of command (e.g. "a" for assignments, "i" for if). That way,
+  each notation has a different first token.
+*)
 Inductive dcom : Type :=
   | DCSkip (P : Assertion)
     (* {{ P }} skip *)
@@ -84,6 +107,8 @@ Notation "'p{{' P '}}' d1 '{{' Q1 '}}' || d2 '{{' Q2 '}}'" :=
   
 Open Scope dcom_scope.
 
+(* Extract regular command from decorated command. *)
+
 Fixpoint erase (d : dcom) : com :=
   match d with
   | DCSkip P => <{ skip }>
@@ -99,6 +124,8 @@ Definition erase_d (dec : decorated) : com :=
   match dec with
   | Decorated d Q => erase d
   end.
+
+(* Extract precondition from decorated command. *)
 
 Fixpoint pre (d : dcom) : Assertion :=
   match d with
@@ -116,6 +143,8 @@ Definition precondition_from (dec : decorated) : Assertion :=
   | Decorated d Q => pre d
   end.
 
+(* Extract rely from decorated command. *)
+
 Fixpoint rely (d : dcom) (Q : Assertion) : list Assertion :=
   match d with
   | DCSkip P => [P]
@@ -131,6 +160,8 @@ Definition rely_from (dec : decorated) : list Assertion :=
   match dec with
   | Decorated d Q => rely d Q
   end.
+
+(* Extract guarantee from decorated command. *)
 
 Fixpoint guar (d : dcom) : list (Assertion * com) :=
   match d with
@@ -148,6 +179,8 @@ Definition guar_from (dec : decorated) : list (Assertion * com) :=
   | Decorated d Q => guar d
   end.
 
+(* Extract postcondition from decorated command. *)
+
 Definition postcondition_from (dec : decorated) : Assertion :=
   match dec with
   | Decorated d Q => Q
@@ -156,6 +189,7 @@ Definition postcondition_from (dec : decorated) : Assertion :=
 Definition decoration_derivable (dec : decorated) : Prop :=
   |- erase_d dec sat (precondition_from dec, rely_from dec, guar_from dec, postcondition_from dec).
 
+(* Extract verification conditions from decorated command. *)
 Fixpoint verification_conditions (d : dcom) (Q : Assertion) : Prop :=
   match d with
   | DCSkip P => P ->> Q
@@ -204,6 +238,8 @@ Proof.
   induction H_np; constructor; auto.
 Qed.
 
+(* Main theorem: if the verification conditions are met, then the
+   extracted command satisfies the extracted specification. *)
 Theorem verification_correct
     d Q
     (H_npia : no_par_in_atomic (erase d))

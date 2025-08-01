@@ -1,3 +1,11 @@
+(*
+  In this file, we'll provide tactics that solve most verification
+  conditions obtained from decorated commands.
+
+  The tactics we define are taken from PLF.Hoare2, with some modification
+  to fit our use cases.
+*)
+
 Set Warnings "-notation-overridden".
 From Coq Require Import Strings.String.
 From PLF Require Import Maps.
@@ -12,6 +20,8 @@ From PLF Require Import Hoare.
 From PLF Require Import Semantics.
 From PLF Require Import Decorated.
 
+(* Helper lemma for later.
+   Strengthening the precondition of a Hoare tripplet. *)
 Lemma H_Consequence_pre
     c P P' Q
     (H_P_P' : P ->> P')
@@ -21,6 +31,22 @@ Proof.
   apply Soundness.H_Consequence with P' Q; auto.
 Qed.
 
+(* Automatically solve most verification conditions.
+
+  Differences from [PLF.Hoare2.verify_assertion]:
+  - Unfolds [Soundness.non_interfering].
+  - Handles [Forall] similarly to conjunction.
+  - Handles [andb] similarly to [negb]:
+    * simplifies [b1 && b2 = true] to [b1 = true /\ b2 = true].
+    * simplifies [b1 && b2 = false] to [b1 = false \/ b2 = false].
+  - Handles [orb] similarly to [negb]:
+    * simplifies [b1 || b2 = true] to [b1 = true \/ b2 = true].
+    * simplifies [b1 || b2 = false] to [b1 = false /\ b2 = false].
+  - Tries to solve using [exfalso; eauto], since there are cases where
+    [eauto] is able to find the contradiction in the assumptions, but
+    doesn't realize it unless we explicitly ask it to do so (by using
+    [exfalso]).
+*)
 Ltac verify_assertion :=
   repeat split;
   simpl;
@@ -48,7 +74,10 @@ Ltac verify_assertion :=
   repeat rewrite not_true_iff_false in *;
   repeat rewrite not_false_iff_true in *;
   repeat (
+    rewrite andb_true_iff in * ||
     rewrite andb_false_iff in * ||
+    rewrite orb_true_iff in * ||
+    rewrite orb_false_iff in * ||
     rewrite negb_true_iff in * ||
     rewrite negb_false_iff in *
   );
@@ -78,7 +107,18 @@ Ltac verify_assertion :=
   try (exfalso; eauto; fail);
   try lia.
 
-(* try to solve goals of type |- {{ P }} c {{ Q }} *)
+(* Try to solve goals of type |- {{ P }} c {{ Q }}, without decorations.
+
+  This is usefull for solving non-interference checks. We can't provide
+  decorations in this case because the same command is used multiple times
+  with different preconditions and postconditions.
+
+  The only supported command types are skip, assignment, atomic block,
+  if statement, and sequencial composition. While statements are not
+  supported because we don't know how to automatically find the loop
+  invariant. Parallel composition is not supported because it is impossible
+  to prove a Hoare tripplet for it.
+*)
 Ltac solve_hoare_tripple :=
   repeat (
     (* make sure the goal only contains supported commands, to avoid an infinite loop. *)
@@ -106,6 +146,7 @@ Ltac solve_hoare_tripple :=
     end
   ).
 
+(* Automatically solve a goal of type: [decoration_derivable <{{ ... }}>]. *)
 Ltac verify :=
   intros;
   apply verification_conditions_correct;
